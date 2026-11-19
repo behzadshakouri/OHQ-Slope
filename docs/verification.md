@@ -69,7 +69,59 @@ The output records profiles, resolution differences, conservation residuals, ben
 
 This benchmark applies the rainfall flux directly to the first soil volume using an OHQ inflow time series. It has no surface-water block or ponding. To compare the same cell-centred discretization, benchmark-only block elevations place OHQ's head references at cell centres. The production adapter's top-reference convention is unchanged. All compared pressures remain negative, so saturated compressibility, surface ponding, and positive-pressure FS coupling are outside this test's scope.
 
-## Rainfall grid sensitivity is still unresolved
+## Ponding, saturation, and a remaining boundary/discretization gap
+
+`validation/ponding.py` extends verification through surface ponding and the positive-pressure storage branch. A 0.5 m sealed column starts at theta=0.30, receives 40 mm/h for 3 h, then drains internally for 3 h. Other soil parameters are the app defaults. The failure-plane pressure is compared at 0.25 m depth every 0.25 h. This is a synthetic diagnostic, not the experimental case.
+
+The independent solver uses conservative cell-centred finite volumes, arithmetic interface conductivity, backward Euler, a tridiagonal Newton solve with line search, and explicit failure if step reductions cannot converge. Its surface reservoir satisfies:
+
+```text
+dh/dt = rainfall - infiltration; h >= 0
+q_top = min(rainfall + h_old/dt,
+            Ksat*(h_new - psi_first + dx/2)/(dx/2))
+```
+
+This is a discrete water-availability/ponded-head boundary. It has no surface-depth smoothing. The [HYDRUS boundary documentation](https://www.pc-progress.com/en/OnlineHelp/HYDRUS3/WaterFlowBoundaryConditions1.html) describes the underlying surface-reservoir balance between rainfall and infiltration; this implementation is independent and is not a HYDRUS run.
+
+To isolate numerical and boundary effects, both solvers use the same **documented OHQ storage law**. For raw effective saturation above 0.999, OHQ clips its suction/conductivity saturation and adds excess pressure. Consequently, on this branch:
+
+```text
+theta(psi) = theta_r + 0.999*(theta_s-theta_r)
+             + Csat*(psi-psi_transition)
+Csat = (theta_s-theta_r)*specific_storage/theta_s
+```
+
+This is not an independent validation of that constitutive choice. Theta above nominal theta_s represents compressible excess storage, not additional pore-volume saturation.
+
+The independent reference uses 128 cells and a maximum 0.000125-day step. Its 64-to-128-cell maximum failure-pressure difference is 0.00345 m; halving the reference step changes pressure by 0.00122 m. These quantify unresolved reference error rather than providing an exact transient solution. Water balance stays within 2e-8 m³. Both solvers transition from negative to positive pressure and finish above nominal theta_s.
+
+| Production OHQ cells | Maximum pressure difference from reference (m) | Final pressure difference (m) |
+|---|---:|---:|
+| 8 | 0.1205 | 0.0001362 |
+| 16 | 0.0712 | 0.0000681 |
+| 32 | 0.0443 | 0.0000341 |
+
+At 32 cells, maximum surface-depth difference is about 0.000258 m. Conserved water and close final water levels do **not** establish transient pressure accuracy. The remaining 4.4 cm pressure difference exceeds the reference refinement differences.
+
+There is also an exact late hydrostatic check. With `theta=b+Csat*psi`, the continuum sealed-column equilibrium is:
+
+```text
+h_final = (initial_water + rainfall_depth - b*L - Csat*L²/2)
+          / (1 + Csat*L)
+psi(x) = h_final + x
+```
+
+Here `h_final` is approximately 0.06870877 m. The production top-reference grid has a calculable surface-depth offset `Csat*L²/[2*N*(1+Csat*L)]`. Regression tests check that offset, mass conservation, positive pressure, excess storage, and decreasing transient differences. They deliberately do not label the transient model validated.
+
+The inspected production connector uses `Ksat*(head_surface-head_soil)/(dx/2)` multiplied by `h/(h+0.001)` for nonnegative surface depth, while the first soil head is referenced at the block top. The independent boundary uses a cell-centred head and water-availability constraint. These differences, plus the interior maximum-Se conductivity rule, are plausible contributors to the transient gap; this experiment does not separate their individual effects. Production equations and the pinned OHQ dependency are unchanged.
+
+```sh
+python3 -m validation.ponding --output results/ponding-check.json
+```
+
+The JSON output records reference profiles, grid/time sensitivity, production differences, the analytical final water level, and source/engine provenance. Resolving the transient gap remains necessary before experimental-case interpretation.
+
+## Original rainfall grid sensitivity is still unresolved
 
 The smooth diffusion check passes, but the rainfall-column wetting transition remains sensitive to block size. The earlier 16-to-32-cell pressure difference was about 0.13 m, despite much closer late hydrostatic states. Conservation and a smooth-flow benchmark do not establish convergence of a sharp nonlinear wetting front.
 
@@ -81,4 +133,4 @@ Reproduce the production-convention rainfall comparison with:
 python3 -m validation.refinement --output results/refinement.json
 ```
 
-The diagnostic explicitly does not declare convergence. The nonlinear fixed-flux comparison above supports unsaturated interior flow, but a benchmark covering the production ponding boundary, further spatial refinement, and examination of interface conductivity and surface discretization remain necessary. Do not interpret pressure bands or failure timing as free of discretization error.
+The diagnostic explicitly does not declare convergence. The ponding comparison above now measures the production-boundary discrepancy, while further spatial refinement and controlled tests of interface conductivity and surface discretization remain necessary. Do not interpret pressure bands or failure timing as free of discretization error.
