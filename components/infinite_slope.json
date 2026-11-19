@@ -1,0 +1,141 @@
+{
+  "Infinite Slope Diagnostic": {
+    "type": "block",
+    "typecategory": "Blocks",
+    "description": "Read-only uniform infinite-slope diagnostic; validated inputs required; no hydraulic feedback.",
+    "Storage": {
+      "type": "balance",
+      "massbalance": "true",
+      "flow": "flow",
+      "initial_value_expression": "0",
+      "includeinoutput": "false",
+      "description": "Inert solver anchor, not soil water storage",
+      "unit": "m^3"
+    },
+    "flow": {
+      "type": "expression",
+      "expression": "0",
+      "includeinoutput": "false"
+    },
+    "cohesion_kpa": {
+      "type": "value",
+      "default": "5",
+      "description": "cohesion_kpa",
+      "ask_user": "true",
+      "includeinoutput": "true",
+      "unit": "kPa"
+    },
+    "friction_deg": {
+      "type": "value",
+      "default": "30",
+      "description": "friction_deg",
+      "ask_user": "true",
+      "includeinoutput": "true",
+      "unit": "degrees"
+    },
+    "unit_weight_kn_m3": {
+      "type": "value",
+      "default": "18",
+      "description": "unit_weight_kn_m3",
+      "ask_user": "true",
+      "includeinoutput": "true",
+      "unit": "kN/m^3"
+    },
+    "slope_deg": {
+      "type": "value",
+      "default": "30",
+      "description": "slope_deg",
+      "ask_user": "true",
+      "includeinoutput": "true",
+      "unit": "degrees"
+    },
+    "failure_depth_m": {
+      "type": "value",
+      "default": "1",
+      "description": "failure_depth_m",
+      "ask_user": "true",
+      "includeinoutput": "true",
+      "unit": "m"
+    },
+    "pressure_head_m": {
+      "type": "value",
+      "default": "0",
+      "description": "pressure_head_m",
+      "ask_user": "true",
+      "includeinoutput": "true",
+      "unit": "m"
+    },
+    "slope_radians": {
+      "type": "expression",
+      "expression": "slope_deg*0.017453292519943295",
+      "includeinoutput": "true",
+      "ask_user": "false"
+    },
+    "friction_radians": {
+      "type": "expression",
+      "expression": "friction_deg*0.017453292519943295",
+      "includeinoutput": "true",
+      "ask_user": "false"
+    },
+    "slope_sine": {
+      "type": "expression",
+      "expression": "slope_radians^1/1-slope_radians^3/6+slope_radians^5/120-slope_radians^7/5040+slope_radians^9/362880-slope_radians^11/39916800+slope_radians^13/6227020800-slope_radians^15/1307674368000+slope_radians^17/355687428096000-slope_radians^19/121645100408832000",
+      "includeinoutput": "true",
+      "ask_user": "false"
+    },
+    "slope_cosine": {
+      "type": "expression",
+      "expression": "1-slope_radians^2/2+slope_radians^4/24-slope_radians^6/720+slope_radians^8/40320-slope_radians^10/3628800+slope_radians^12/479001600-slope_radians^14/87178291200+slope_radians^16/20922789888000-slope_radians^18/6402373705728000+slope_radians^20/2432902008176640000",
+      "includeinoutput": "true",
+      "ask_user": "false"
+    },
+    "friction_sine": {
+      "type": "expression",
+      "expression": "friction_radians^1/1-friction_radians^3/6+friction_radians^5/120-friction_radians^7/5040+friction_radians^9/362880-friction_radians^11/39916800+friction_radians^13/6227020800-friction_radians^15/1307674368000+friction_radians^17/355687428096000-friction_radians^19/121645100408832000",
+      "includeinoutput": "true",
+      "ask_user": "false"
+    },
+    "friction_cosine": {
+      "type": "expression",
+      "expression": "1-friction_radians^2/2+friction_radians^4/24-friction_radians^6/720+friction_radians^8/40320-friction_radians^10/3628800+friction_radians^12/479001600-friction_radians^14/87178291200+friction_radians^16/20922789888000-friction_radians^18/6402373705728000+friction_radians^20/2432902008176640000",
+      "includeinoutput": "true",
+      "ask_user": "false"
+    },
+    "normal_stress_kpa": {
+      "type": "expression",
+      "expression": "unit_weight_kn_m3*failure_depth_m*slope_cosine^2",
+      "includeinoutput": "true",
+      "ask_user": "false"
+    },
+    "pore_pressure_kpa": {
+      "type": "expression",
+      "expression": "9.81*_pos(pressure_head_m)",
+      "includeinoutput": "true",
+      "ask_user": "false"
+    },
+    "effective_normal_stress_kpa": {
+      "type": "expression",
+      "expression": "normal_stress_kpa-pore_pressure_kpa",
+      "includeinoutput": "true",
+      "ask_user": "false"
+    },
+    "contact_valid": {
+      "type": "expression",
+      "expression": "_hsd(effective_normal_stress_kpa)",
+      "includeinoutput": "true",
+      "ask_user": "false"
+    },
+    "driving_stress_kpa": {
+      "type": "expression",
+      "expression": "unit_weight_kn_m3*failure_depth_m*slope_sine*slope_cosine",
+      "includeinoutput": "true",
+      "ask_user": "false"
+    },
+    "factor_of_safety": {
+      "type": "expression",
+      "expression": "(cohesion_kpa+effective_normal_stress_kpa*friction_sine/friction_cosine)/driving_stress_kpa",
+      "includeinoutput": "true",
+      "ask_user": "false"
+    }
+  }
+}

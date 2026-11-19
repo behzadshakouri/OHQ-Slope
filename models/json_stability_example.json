@@ -1,0 +1,63 @@
+{
+  "mode": "ensemble",
+  "samples": 5,
+  "seed": 42,
+  "parameters": {
+    "cohesion_kpa": {
+      "value": 5,
+      "min": 3,
+      "max": 7
+    },
+    "friction_deg": {
+      "value": 30,
+      "min": 27,
+      "max": 33
+    },
+    "unit_weight_kn_m3": {
+      "value": 18,
+      "min": 17,
+      "max": 19
+    },
+    "slope_deg": {
+      "value": 30,
+      "min": 28,
+      "max": 32
+    },
+    "failure_depth_m": {
+      "value": 2,
+      "min": 1.8,
+      "max": 2.2
+    }
+  },
+  "pressure_history": [
+    {
+      "time_h": 0,
+      "head_m": 0
+    },
+    {
+      "time_h": 2,
+      "head_m": 0.15
+    },
+    {
+      "time_h": 4,
+      "head_m": 0.35
+    },
+    {
+      "time_h": 6,
+      "head_m": 0.65
+    },
+    {
+      "time_h": 8,
+      "head_m": 1
+    },
+    {
+      "time_h": 10,
+      "head_m": 0.75
+    },
+    {
+      "time_h": 12,
+      "head_m": 0.45
+    }
+  ],
+  "stability_engine": "ohq_json"
+}

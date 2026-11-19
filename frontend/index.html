@@ -12,6 +12,8 @@
 <label for="pressure-source">Pressure source</label><select id="pressure-source"><option value="ohq_column">OHQ rainfall column</option><option value="prescribed_history">Prescribed pressure history</option></select>
 <p id="engine-status" class="help" aria-live="polite">Checking OHQ availability…</p>
 <label for="mode">Calculation</label><select id="mode"><option value="deterministic">Deterministic · fixed inputs</option><option value="ensemble">Monte Carlo · independent uniform ranges</option></select>
+<label for="stability-engine">Stability calculation</label><select id="stability-engine"><option value="python_reference">Python reference</option><option value="ohq_json">OHQ JSON component · checked against reference</option></select>
+<p class="help">OHQ JSON supports up to 100 realizations and 10,000 sample-time evaluations. Requires the OHQ console.</p>
 <div class="table-wrap"><table><caption>Mechanical properties</caption><thead><tr><th scope="col">Parameter</th><th scope="col">Value</th><th scope="col" class="range-col">Min</th><th scope="col" class="range-col">Max</th></tr></thead><tbody id="parameters"></tbody></table></div>
 <p class="help" id="range-help">The deterministic run uses the value column.</p>
 <div class="two-col" id="ensemble-options" hidden><div><label for="samples">Realizations</label><input id="samples" type="number" min="1" max="10000" step="1" value="2000"></div><div><label for="seed">Random seed</label><input id="seed" type="number" min="0" max="4294967295" step="1" value="42"></div></div>

@@ -67,7 +67,7 @@ def quantile(values, probability):
     return values[lower] + (values[upper] - values[lower]) * (x - lower)
 
 
-def run(request, progress=lambda value: None, cancelled=lambda: False):
+def run(request, progress=lambda value: None, cancelled=lambda: False, evaluator=None):
     request = validate(request)
     rng = random.Random(request['seed'])
     history = request['pressure_history']
@@ -81,7 +81,8 @@ def run(request, progress=lambda value: None, cancelled=lambda: False):
         params = {name: (rng.uniform(spec['min'], spec['max'])
                         if request['mode'] == 'ensemble' else spec['value'])
                   for name, spec in request['parameters'].items()}
-        series = [factor_of_safety(**params, pressure_head_m=row['head_m']) for row in history]
+        series = (evaluator(params,history,i) if evaluator else
+                  [factor_of_safety(**params, pressure_head_m=row['head_m']) for row in history])
         minima.append(min(series))
         # First sampled crossing only; no interpolation or continuous-time claim.
         crossings.append(next((row['time_h'] for row, fs in zip(history, series) if fs < 1), None))

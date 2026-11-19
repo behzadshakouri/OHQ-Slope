@@ -39,7 +39,7 @@ def sample(rng, entry):
     return rng.uniform(low,high)
 
 
-def run_coupled(request,folder,progress,message,cancelled):
+def run_coupled(request,folder,progress,message,cancelled,evaluator=None):
     count=request['samples'];rng=random.Random(request['seed'])
     fs_columns=None;pressure_columns=None;minima=[];crossings=[];records=[];reference=None;max_balance=0
     for index in range(count):
@@ -61,7 +61,8 @@ def run_coupled(request,folder,progress,message,cancelled):
                 fs_columns=[[] for _ in history];pressure_columns=[[] for _ in history]
             elif [row['time_h'] for row in history]!=[row['time_h'] for row in reference['pressure_history']]:
                 raise ValueError('Realizations have different output times.')
-            fs=[factor_of_safety(**mechanical,pressure_head_m=row['head_m']) for row in history]
+            fs=(evaluator(mechanical,history,index) if evaluator else
+                [factor_of_safety(**mechanical,pressure_head_m=row['head_m']) for row in history])
             minimum=min(fs);crossing=next((row['time_h'] for row,value in zip(history,fs) if value<1),None)
             for i,(row,value) in enumerate(zip(history,fs)):
                 fs_columns[i].append(value);pressure_columns[i].append(row['head_m'])

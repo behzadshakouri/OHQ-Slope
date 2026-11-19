@@ -40,7 +40,8 @@ function hydraulicChanged() {
   const active=eligible&&$('sample-hydraulics').checked;
   $('hydraulic-options').hidden=!eligible;$('sample-hydraulics').disabled=!eligible;$('hydraulic-ranges').hidden=!active;
   document.querySelectorAll('#hydraulic-ranges input,#hydraulic-ranges select').forEach(node=>{node.disabled=!active;});
-  $('samples').max=active?'100':'10000';if(active&&Number($('samples').value)>100)$('samples').value='10';
+  const limited=active||$('stability-engine').value==='ohq_json';
+  $('samples').max=limited?'100':'10000';if(limited&&Number($('samples').value)>100)$('samples').value='10';
   if($('pressure-source').value==='ohq_column') $('driver-note').textContent=active?'Each realization samples hydraulic and mechanical properties and runs OHQ separately. Transient grid sensitivity remains.':'One OHQ run supplies pressure. Hydraulic inputs and failure depth are fixed; transient grid sensitivity remains.';
 }
 function advancedInputs() {
@@ -59,8 +60,8 @@ function driverChanged() {
   $('pressure').disabled=hydro;
   $('driver-title').textContent=hydro?'OHQ rainfall column':'Reference calculation';
   $('driver-note').textContent=hydro?'Prototype column: one OHQ run supplies pressure. Hydraulic inputs and failure depth are fixed; transient grid sensitivity remains.':'Pressure is supplied by you; no hydrologic simulation is used.';
-  $('engine-status').textContent=engineAvailable?'OHQ console built and available.': 'OHQ is not built. Use prescribed pressure or build the console; see the README.';
-  $('submit').disabled=hydro&&!engineAvailable;
+  $('engine-status').textContent=engineAvailable?'OHQ console built and available.': 'OHQ is not built. Use Python reference with prescribed pressure, or build the console; see the README.';
+  $('submit').disabled=(hydro||$('stability-engine').value==='ohq_json')&&!engineAvailable;
   modeChanged();
 }
 
@@ -93,7 +94,7 @@ function modeChanged() {
   hydraulicChanged();
 }
 function reset() {
-  inputs();advancedInputs();hydraulicInputs();$('sample-hydraulics').checked=false; $('mode').value = 'deterministic';$('pressure-source').value='ohq_column';
+  inputs();advancedInputs();hydraulicInputs();$('sample-hydraulics').checked=false; $('mode').value = 'deterministic';$('pressure-source').value='ohq_column';$('stability-engine').value='python_reference';
   for(const field of ['value','min','max']) $('failure_depth_m-'+field).value='1';
   for(const [id,value] of Object.entries({rainfall:'40','rain-duration':'6',duration:'24',ksat:'0.5','initial-theta':'0.3',base:'sealed'})) $(id).value=value;
   $('pressure').value = '0, 0\n2, 0.15\n4, 0.35\n6, 0.65\n8, 1\n10, 0.75\n12, 0.45';
@@ -110,7 +111,7 @@ function scenario() {
     parameters.failure_depth_m.min=parameters.failure_depth_m.max=parameters.failure_depth_m.value;
     const column=Object.fromEntries(advanced.map(([key])=>[key,Number($('column-'+key).value)]));
     Object.assign(column,{rainfall_mm_h:Number($('rainfall').value),rain_duration_h:Number($('rain-duration').value),duration_h:Number($('duration').value),ksat_m_day:Number($('ksat').value),initial_theta:Number($('initial-theta').value),base:$('base').value});
-    const request={mode:$('mode').value,pressure_source:source,parameters,column,samples:Number($('samples').value),seed:Number($('seed').value)};
+    const request={mode:$('mode').value,pressure_source:source,stability_engine:$('stability-engine').value,parameters,column,samples:Number($('samples').value),seed:Number($('seed').value)};
     if($('mode').value==='ensemble'&&$('sample-hydraulics').checked) request.hydraulic_uncertainty=Object.fromEntries(hydraulicDefinitions.map(([key])=>[key,{min:Number($(`hydraulic-${key}-min`).value),max:Number($(`hydraulic-${key}-max`).value),distribution:$(`hydraulic-${key}-distribution`).value}]));
     return request;
   }
@@ -119,7 +120,7 @@ function scenario() {
     if (parts.length !== 2 || !parts.every(Number.isFinite)) throw new Error(`Pressure row ${index+1} needs two numbers: time, head.`);
     return {time_h: parts[0], head_m: parts[1]};
   });
-  return {mode: $('mode').value, pressure_source:source, parameters, pressure_history,
+  return {mode: $('mode').value, pressure_source:source, stability_engine:$('stability-engine').value, parameters, pressure_history,
     samples: Number($('samples').value), seed: Number($('seed').value)};
 }
 async function api(path, options = {}) {
@@ -186,6 +187,7 @@ function showResult(data) {
   $('probability').textContent = ensemble ? `${(100*data.event_probability).toFixed(1)}%` : data.event_probability ? 'Yes' : 'No';
   $('count').textContent = data.samples.toLocaleString();
   $('chart-note').textContent = data.hydraulic_uncertainty_sampled ? 'Solid lines: pointwise medians; shading: 5–95% ranges. Each realization has its own OHQ pressure history. Hydraulic and mechanical inputs are independent.' : ensemble ? 'Solid line: median FS. Shading: 5–95% range. Independent uniform mechanical uncertainty; pressure history held fixed.' : data.ohq_hydrology_used ? 'Fixed mechanical inputs with OHQ-simulated pressure. FS evaluated at the selected output times.' : 'Fixed mechanical inputs with prescribed pressure. FS evaluated at supplied times.';
+  if(data.stability_engine==='ohq_json') $('chart-note').textContent+=' FS calculated by the OHQ JSON component and checked against Python.';
   chart(data.series);
   $('hydrology-result').hidden=!data.ohq_hydrology_used;
   if(data.ohq_hydrology_used) {
@@ -239,10 +241,11 @@ $('scenario').addEventListener('submit',async event=>{
   event.preventDefault();$('form-error').textContent='';$('submit').disabled=true;
   try {const request=scenario();const job=await api('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(request)});await openJob(job.id);}
   catch(error){$('form-error').textContent=error.message;}
-  finally{$('submit').disabled=$('pressure-source').value==='ohq_column'&&!engineAvailable;}
+  finally{$('submit').disabled=($('pressure-source').value==='ohq_column'||$('stability-engine').value==='ohq_json')&&!engineAvailable;}
 });
 $('cancel').onclick=async()=>{try{await api(`/api/jobs/${currentJob}`,{method:'DELETE'});}catch(error){$('status').textContent=error.message;}};
 $('sample-hydraulics').onchange=hydraulicChanged;
+$('stability-engine').onchange=driverChanged;
 $('mode').onchange=modeChanged;$('reset').onclick=reset;
 $('pressure-source').onchange=()=>{if($('pressure-source').value==='ohq_column') {for(const field of ['value','min','max']) $('failure_depth_m-'+field).value=$('failure_depth_m-value').value;}driverChanged();};
 $('download').onclick=()=>{if(!exported)return;const url=URL.createObjectURL(new Blob([JSON.stringify(exported,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download=`slope-${exported.job.id}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};

@@ -5,6 +5,7 @@ A local slope-stability workspace with a browser front end, a job-service back e
 ## Current capability
 
 - Configure a uniform infinite slope with either an OHQ rainfall column or a prescribed pressure history.
+- Calculate FS with the Python reference or a custom OHQ JSON diagnostic, with per-realization agreement checks.
 - Select sealed or unit-gradient drainage, inspect pressure response, and check water conservation.
 - Run deterministic FS or seeded Monte Carlo calculations with independent uniform mechanical inputs.
 - Optionally sample conductivity, retention parameters, and initial moisture using independent uniform or log-uniform ranges, with one OHQ solve per realization.
@@ -42,6 +43,8 @@ After building OHQ, run the coupled example with `python3 -m uncertainty.run mod
 
 For a small hydraulic ensemble, use `python3 -m uncertainty.run models/hydraulic_ensemble_example.json --output results/hydraulic-ensemble.json`. In the interface choose Monte Carlo and enable “Sample hydraulic properties too”. Up to 100 OHQ solves are allowed per job; start with a small count. See [sampling details](docs/hydraulic_uncertainty.md).
 
+To use the OHQ JSON stability component, choose it under **Stability calculation**, or run `python3 -m uncertainty.run models/json_stability_example.json --output results/json-stability.json`. It requires the built console, supports up to 100 realizations and 10,000 sample-time evaluations, and checks every FS against Python before reporting results. See [JSON component details](docs/json_stability.md).
+
 The browser, API, and command-line runner use the same workflow, stability, and uncertainty modules. See [the calculation specification](docs/calculation.md) and [API contract](docs/api.md).
 
 ## Verify
@@ -67,7 +70,7 @@ Build the console out of tree:
 python3 scripts/build_ohq.py --qmake /path/to/Qt/gcc_64/bin/qmake
 ```
 
-Qt6, a C++17 compiler, make, Armadillo, LAPACK/BLAS, GSL, and SuperLU are required; see upstream build instructions for platform details. The helper records binary provenance under ignored `build/ohq-console/`. No executable or generated kernel is committed. The pinned engine has been built locally and checked with synthetic column cases, not field validated. See [column conventions and verification limits](docs/column.md), including the time-zero observation workaround and unresolved transient spatial sensitivity. [Independent flow checks](docs/verification.md) cover analytical small-amplitude diffusion and nonlinear unsaturated infiltration with a fixed rainfall flux. The production ponding boundary remains unverified against an independent solver.
+Qt6, a C++17 compiler, make, Armadillo, LAPACK/BLAS, GSL, and SuperLU are required; see upstream build instructions for platform details. The helper records binary provenance under ignored `build/ohq-console/`. No executable or generated kernel is committed. The pinned engine has been built locally and checked with synthetic column cases, not field validated. See [column conventions and verification limits](docs/column.md), including the time-zero observation workaround and unresolved transient spatial sensitivity. [Independent flow checks](docs/verification.md) cover analytical diffusion, nonlinear unsaturated infiltration, and ponding/saturation. The latter finds a remaining transient pressure difference of about 0.044 m at 32 cells in its synthetic case, despite close final water levels.
 
 ## Structure
 
@@ -75,23 +78,23 @@ Qt6, a C++17 compiler, make, Armadillo, LAPACK/BLAS, GSL, and SuperLU are requir
 |---|---|
 | `frontend/` | Buildless browser interface and SVG charts |
 | `backend/` | Local HTTP API, persistent job records, single simulation worker |
-| `stability/` | Uniform infinite-slope reference calculation |
+| `stability/` | Infinite-slope Python reference and OHQ JSON diagnostic adapter |
 | `hydrology/` | OHQ column generation, process adapter, pressure mapping, and conservation checks |
 | `uncertainty/` | Seeded ensemble calculation and CLI |
 | `models/` | Synthetic runnable input specifications |
 | `tests/` | Scientific and HTTP integration checks |
-| `validation/` | Analytical diffusion, independent nonlinear infiltration, and rainfall refinement diagnostics |
-| `components/` | Column boundary definitions; future FS JSON diagnostics |
+| `validation/` | Analytical diffusion, nonlinear infiltration, ponding/saturation, and rainfall refinement diagnostics |
+| `components/` | Column boundaries and read-only infinite-slope JSON diagnostic |
 | `config/` | Engine provenance |
 | `external/OpenHydroQual/` | Pinned engine submodule |
 | `results/` | Ignored generated outputs |
 
 ## Next development stages
 
-1. Establish transient spatial convergence and independently verify the production ponding boundary; extend the existing unsaturated Richards comparison into the saturated regime.
+1. Resolve the transient pressure gap identified by the independent ponding/saturation comparison and establish spatial convergence.
 2. Validate pressure representation and mechanical surface-loading assumptions before interpreting failure timing.
 3. Establish evidence-based joint parameter distributions and benchmark comparable experimental cases.
-4. Add verified JSON diagnostics and optimize ensembles where justified.
+4. Extend the implemented JSON diagnostic where justified; verify interpreter/kernel parity before enabling generated kernels.
 5. Add rainfall-conditioned pseudostatic seismic assessment.
 
 The front end and back end are part of the current application. Live sensors, scheduled forecasts, state assimilation, and other digital-twin functions are deferred. See [development notes](docs/development.md).

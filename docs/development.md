@@ -2,6 +2,8 @@
 
 Keep hydrology, stability, and ensemble orchestration behind small interfaces. The initial app runs the external FS reference calculation on prescribed pressure histories. An initial coupling now runs the pinned headless OHQ console for a synthetic rainfall column. Pressure mapping follows its top-reference convention; transient spatial accuracy still requires independent benchmarking. Do not duplicate the complete Soil template as the initial extension strategy.
 
+The separate JSON diagnostic is now implemented in `components/infinite_slope.json`. The optional `ohq_json` workflow uses its FS values and checks every realization against the Python reference. It runs after external pressure mapping, without cross-block reads or feedback into hydrology. Ponding/saturation diagnostics identify a remaining transient pressure discrepancy; do not treat mechanical parity as hydrologic validation. See [JSON implementation](json_stability.md) and [flow verification](verification.md).
+
 The external stability calculation will consume time, pressure at specified failure surfaces, geometry, and mechanical parameters. Define units, pressure sign, angle convention, and failure geometry explicitly before implementation. Do not equate block thickness with failure depth or assume representative block pressure is bottom pressure.
 
 Verify water balance, initial conditions, independent ensemble initialization, numerical run status, and sampling resolution. Record input and template hashes, seed, distributions, engine commit, build settings, and solver settings for each ensemble. Treat numerical failures separately from physical instability.
