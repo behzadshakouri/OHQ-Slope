@@ -1,0 +1,3 @@
+[submodule "external/OpenHydroQual"]
+	path = external/OpenHydroQual
+	url = https://github.com/ArashMassoudieh/OpenHydroQual.git
