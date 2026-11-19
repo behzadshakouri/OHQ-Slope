@@ -24,7 +24,7 @@ def main():
         if not all(checks):
             print("Dependency mismatch or modified tracked files. Initialize submodules and review the lock.")
             return 1
-        print("Pinned dependency check passed. Engine build and slope validation remain pending.")
+        print("Pinned source check passed. Engine build and model validation are separate checks.")
         return 0
     except (OSError, subprocess.CalledProcessError) as error:
         print("Dependency check failed:", error, file=sys.stderr)

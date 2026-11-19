@@ -11,7 +11,8 @@ import threading
 from urllib.parse import urlsplit
 import uuid
 
-from uncertainty.ensemble import run, validate
+from backend.workflow import execute, validate_request
+from hydrology.column import ready
 
 ROOT = Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / 'frontend'
@@ -59,7 +60,7 @@ class Jobs:
             return [dict(x) for x in sorted(self.items.values(), key=lambda x: x['created_utc'], reverse=True)[:50]]
 
     def submit(self, request):
-        request = validate(request)
+        request = validate_request(request)
         with self.lock:
             if sum(x['state'] in ('queued', 'running') for x in self.items.values()) >= 8:
                 raise OverflowError('Eight jobs are already active; wait or cancel one.')
@@ -67,13 +68,13 @@ class Jobs:
             folder = self.folder / job_id
             folder.mkdir()
             write_json(folder / 'request.json', request)
-            # Snapshot the pinned engine identity even though this mode does not use it.
+            # Snapshot the requested coupling and relevant source identities.
             write_json(folder / 'provenance.json', {
                 'engine': json.loads((ROOT / 'config/engine.json').read_text()),
                 'calculation': 'infinite_slope_reference_v1',
                 'source_sha256': {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
-                    for name in ('stability/infinite_slope.py', 'uncertainty/ensemble.py', 'backend/server.py')},
-                'pressure_source': 'prescribed_history', 'ohq_hydrology_used': False,
+                    for name in ('stability/infinite_slope.py', 'uncertainty/ensemble.py', 'backend/server.py', 'backend/workflow.py', 'hydrology/column.py', 'components/column_boundaries.json', 'external/OpenHydroQual/resources/unsaturated_soil.json', 'external/OpenHydroQual/resources/main_components.json')},
+                'pressure_source': request['pressure_source'], 'ohq_hydrology_requested': request['pressure_source']=='ohq_column',
             })
             self.items[job_id] = {'id': job_id, 'state': 'queued', 'progress': 0,
                 'mode': request['mode'], 'samples': request['samples'],
@@ -85,12 +86,14 @@ class Jobs:
     def execute(self, job_id, request):
         try:
             with self.lock:
-                if self.items[job_id]['state'] == 'cancelled':
+                if self.items[job_id]['state'] in ('cancelled','interrupted'):
                     return
                 self.update(job_id, state='running', message='Calculating factor of safety.')
             def cancelled():
-                return self.get(job_id)['state'] == 'cancelled'
-            result = run(request, lambda value: self.update(job_id, progress=value), cancelled)
+                return self.get(job_id)['state'] in ('cancelled','interrupted')
+            result = execute(request, self.folder / job_id,
+                             lambda value: self.update(job_id, progress=value),
+                             lambda text: self.update(job_id, message=text), cancelled)
             with self.lock:
                 if cancelled():
                     return
@@ -100,7 +103,7 @@ class Jobs:
             pass
         except Exception as error:
             with self.lock:
-                if self.items[job_id]['state'] != 'cancelled':
+                if self.items[job_id]['state'] not in ('cancelled','interrupted'):
                     self.update(job_id, state='failed', message=str(error))
 
     def cancel(self, job_id):
@@ -112,7 +115,11 @@ class Jobs:
             return self.get(job_id)
 
     def close(self):
-        self.pool.shutdown(wait=True)
+        with self.lock:
+            for job_id,item in self.items.items():
+                if item['state'] in ('queued','running'):
+                    self.update(job_id,state='interrupted',message='Server stopped; submit a new run to restart.')
+        self.pool.shutdown(wait=True,cancel_futures=True)
 
 
 def handler_for(jobs):
@@ -153,8 +160,8 @@ def handler_for(jobs):
                 name, mime = assets[path]
                 return self.send(200, (FRONTEND / name).read_bytes(), mime)
             if path == '/api/health':
-                return self.send(200, {'status': 'ok', 'pressure_mode': 'prescribed_history',
-                    'ohq_hydrology_available': False,
+                return self.send(200, {'status': 'ok', 'pressure_modes': ['prescribed_history', 'ohq_column'],
+                    'ohq_hydrology_available': ready(),
                     'engine': json.loads((ROOT / 'config/engine.json').read_text())})
             if path == '/api/jobs':
                 return self.send(200, {'jobs': jobs.list()})

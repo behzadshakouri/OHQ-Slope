@@ -8,6 +8,7 @@ import unittest
 from http.server import ThreadingHTTPServer
 from backend.server import Jobs, handler_for, write_json
 from test_stability import scenario
+from hydrology.column import ready
 
 
 class HTTPTests(unittest.TestCase):
@@ -32,7 +33,7 @@ class HTTPTests(unittest.TestCase):
         return status, json.loads(raw) if mime=='application/json' else raw
 
     def wait_for(self, job_id):
-        deadline=time.monotonic()+5
+        deadline=time.monotonic()+30
         while time.monotonic()<deadline:
             item=self.jobs.get(job_id)
             if item['state'] not in ('queued','running'):return item
@@ -43,7 +44,7 @@ class HTTPTests(unittest.TestCase):
         for path in ('/','/style.css','/app.js'):
             self.assertEqual(self.request('GET',path)[0],200)
         code,health=self.request('GET','/api/health')
-        self.assertEqual(code,200);self.assertFalse(health['ohq_hydrology_available'])
+        self.assertEqual(code,200);self.assertEqual(health['ohq_hydrology_available'],ready())
         code,job=self.request('POST','/api/jobs',scenario('ensemble',30))
         self.assertEqual(code,202)
         self.assertEqual(self.wait_for(job['id'])['state'],'completed')
@@ -53,6 +54,19 @@ class HTTPTests(unittest.TestCase):
         self.assertEqual(self.request('GET',f"/api/jobs/{job['id']}/request")[0],200)
         self.assertEqual(self.request('GET',f"/api/jobs/{job['id']}/provenance")[0],200)
         self.assertEqual(self.request('GET','/api/jobs')[1]['jobs'][0]['id'],job['id'])
+
+    @unittest.skipUnless(ready(), 'Build OHQ before coupled HTTP check.')
+    def test_ohq_job_uses_simulated_pressure(self):
+        from test_hydrology import column_request
+        request=column_request()
+        request['column'].update(duration_h=2,rain_duration_h=1)
+        code,job=self.request('POST','/api/jobs',request)
+        self.assertEqual(code,202)
+        status=self.wait_for(job['id'])
+        self.assertEqual(status['state'],'completed',status['message'])
+        _,result=self.request('GET',f"/api/jobs/{job['id']}/result")
+        self.assertTrue(result['ohq_hydrology_used'])
+        self.assertLess(result['hydrology']['water_balance_max_residual_m3'],1e-7)
 
     def test_input_errors_and_origin(self):
         self.assertEqual(self.request('POST','/api/jobs',{})[0],400)
@@ -80,6 +94,15 @@ class RecoveryTests(unittest.TestCase):
             jobs=Jobs(temp)
             try:self.assertEqual(jobs.get(job_id)['state'],'interrupted')
             finally:jobs.close()
+
+    def test_shutdown_interrupts_queued_jobs(self):
+        with tempfile.TemporaryDirectory() as temp:
+            jobs=Jobs(temp)
+            gate=threading.Event();jobs.pool.submit(gate.wait)
+            job=jobs.submit(scenario())
+            release=threading.Timer(.02,gate.set);release.start()
+            jobs.close();release.join()
+            self.assertEqual(jobs.get(job['id'])['state'],'interrupted')
 
     def test_queued_cancel_is_preserved(self):
         with tempfile.TemporaryDirectory() as temp:

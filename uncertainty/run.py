@@ -2,7 +2,7 @@
 import argparse
 import json
 from pathlib import Path
-from uncertainty.ensemble import run
+from backend.workflow import execute
 
 
 def main():
@@ -12,7 +12,10 @@ def main():
     args = parser.parse_args()
     try:
         request = json.loads(args.scenario.read_text())
-        result = run(request)
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        workdir=args.output.parent/(args.output.stem+'_files')
+        workdir.mkdir(parents=True,exist_ok=True)
+        result = execute(request,workdir)
     except (OSError, ValueError) as error:
         parser.exit(1, f'Calculation failed: {error}\n')
     args.output.parent.mkdir(parents=True, exist_ok=True)

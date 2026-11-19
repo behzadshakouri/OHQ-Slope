@@ -3,6 +3,6 @@
   "path": "external/OpenHydroQual",
   "commit": "262a66d484c32f0f2f59496c92c91dbd8cc3223a",
   "jsoncpp_commit": "ca98c98457b1163cca1f7d8db62827c115fec6d1",
-  "status": "Source baseline only; engine build and slope validation pending.",
+  "status": "Pinned source dependency; runtime availability and model verification are reported separately.",
   "local_patches": []
 }

@@ -1,6 +1,6 @@
 # Development notes
 
-Keep hydrology, stability, and ensemble orchestration behind small interfaces. The initial app runs the external FS reference calculation on prescribed pressure histories. The next coupling stage will use interpreted OHQ runs through Python bindings or the headless runner. Do not duplicate the complete Soil template as the initial extension strategy.
+Keep hydrology, stability, and ensemble orchestration behind small interfaces. The initial app runs the external FS reference calculation on prescribed pressure histories. An initial coupling now runs the pinned headless OHQ console for a synthetic rainfall column. Pressure mapping follows its top-reference convention; transient spatial accuracy still requires independent benchmarking. Do not duplicate the complete Soil template as the initial extension strategy.
 
 The external stability calculation will consume time, pressure at specified failure surfaces, geometry, and mechanical parameters. Define units, pressure sign, angle convention, and failure geometry explicitly before implementation. Do not equate block thickness with failure depth or assume representative block pressure is bottom pressure.
 

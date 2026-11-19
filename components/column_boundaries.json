@@ -1,0 +1,27 @@
+{
+  "Column Drainage Collector": {
+    "type": "block",
+    "typecategory": "Blocks",
+    "description": "Cumulative basal drainage ledger, not a hydraulic reservoir",
+    "Storage": {
+      "type": "balance",
+      "massbalance": "true",
+      "flow": "flow",
+      "initial_value_expression": "0",
+      "includeinoutput": "true",
+      "unit": "m^3"
+    }
+  },
+  "Column Unit Gradient Drain": {
+    "type": "link",
+    "typecategory": "Connectors",
+    "description": "Downward unit-gradient basal drainage",
+    "flow": {
+      "type": "expression",
+      "expression": "area.s*K_sat.s*Se.s^L.s*(1-(1-Se.s^(1/m.s))^m.s)^2",
+      "includeinoutput": "true",
+      "applylimit": "true",
+      "unit": "m^3/day"
+    }
+  }
+}
