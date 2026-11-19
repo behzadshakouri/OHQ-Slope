@@ -60,10 +60,12 @@ Final pressure heads were approximately 1.02467, 1.02359, and 1.02306 m for 8, 1
 
 ## Stability and uncertainty limits
 
-The failure depth is held fixed in column mode. Mechanical Monte Carlo realizations reuse one hydrologic trajectory and can vary cohesion, friction angle, total unit weight, and slope angle. Hydraulic parameters are not sampled yet. Full hydraulic uncertainty requires one hydrologic solve per sampled hydraulic parameter set (or a verified reuse strategy), rather than relabelling the current mechanical ensemble as coupled hydraulic UQ.
+The failure depth is held fixed in column mode. Mechanical Monte Carlo realizations reuse one hydrologic trajectory and can vary cohesion, friction angle, total unit weight, and slope angle. With hydraulic sampling disabled, one hydrologic trajectory is reused for the mechanical ensemble. With sampling enabled, Ksat, alpha, n, and initial moisture can have independent uniform or log-uniform ranges, and each realization gets a separate OHQ solve. Failure depth and other geometry remain fixed. See [hydraulic uncertainty](hydraulic_uncertainty.md).
 
 FS uses fixed total unit weight per realization, omits suction strength, and currently omits the mechanical surcharge of ponded surface water. It does not represent layered overburden, erosion, or changes in failure geometry. Very high pressure can exceed the frictional-contact model's normal stress; that produces an explicit failed job rather than a silently discarded realization. OHQ water content above its nominal saturated value represents the template's excess-storage/compressibility branch and should not automatically be interpreted as measured pore-volume saturation.
 
 ## Next verification work
 
 Compare an independent Richards-equation benchmark, refine spatial resolution and output spacing, examine the representative-head convention and boundary discretization, then move to the reference experimental case. Add appropriate mechanical treatment of surface loading and an explicit unsaturated strength model if those effects are within the study scope. The reference experimental paper and report remain outside this software repository.
+
+See [independent flow verification](verification.md) for the analytical small-amplitude diffusion check and the unresolved rainfall-grid investigation. Passing the smooth benchmark does not establish nonlinear wetting-front accuracy.

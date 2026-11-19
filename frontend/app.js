@@ -15,6 +15,34 @@ const advanced = [
  ['specific_storage_per_m','Specific storage (1/m)',.01,.0001,.1], ['pore_connectivity','Pore connectivity L',.5,0,1],
  ['output_interval_h','Output spacing (h)',.25,.05,6], ['solver_step_h','Maximum solver step (h)',1/60,1/600,.1],
 ];
+const hydraulicDefinitions=[
+ ['ksat_m_day','Ksat (m/day)',.35,.65,'log_uniform'],
+ ['alpha_per_m','α (1/m)',1.2,1.8,'uniform'],
+ ['n','Retention n',1.4,1.8,'uniform'],
+ ['initial_theta','Initial water content',.28,.32,'uniform'],
+];
+function hydraulicInputs() {
+  $('hydraulic-parameters').replaceChildren();
+  for(const [key,label,min,max,distribution] of hydraulicDefinitions) {
+    const row=document.createElement('tr'),name=document.createElement('td');name.textContent=label;row.append(name);
+    for(const [field,value] of [['min',min],['max',max]]) {
+      const td=document.createElement('td'),input=document.createElement('input');
+      Object.assign(input,{id:`hydraulic-${key}-${field}`,type:'number',step:'any',value});
+      input.setAttribute('aria-label',`${label} ${field}`);td.append(input);row.append(td);
+    }
+    const td=document.createElement('td'),select=document.createElement('select');select.id=`hydraulic-${key}-distribution`;select.setAttribute('aria-label',`${label} distribution`);
+    for(const [value,text] of [['uniform','Uniform'],['log_uniform','Log-uniform']]) {const option=document.createElement('option');option.value=value;option.textContent=text;select.append(option);}
+    select.value=distribution;td.append(select);row.append(td);$('hydraulic-parameters').append(row);
+  }
+}
+function hydraulicChanged() {
+  const eligible=$('pressure-source').value==='ohq_column'&&$('mode').value==='ensemble';
+  const active=eligible&&$('sample-hydraulics').checked;
+  $('hydraulic-options').hidden=!eligible;$('sample-hydraulics').disabled=!eligible;$('hydraulic-ranges').hidden=!active;
+  document.querySelectorAll('#hydraulic-ranges input,#hydraulic-ranges select').forEach(node=>{node.disabled=!active;});
+  $('samples').max=active?'100':'10000';if(active&&Number($('samples').value)>100)$('samples').value='10';
+  if($('pressure-source').value==='ohq_column') $('driver-note').textContent=active?'Each realization samples hydraulic and mechanical properties and runs OHQ separately. Transient grid sensitivity remains.':'One OHQ run supplies pressure. Hydraulic inputs and failure depth are fixed; transient grid sensitivity remains.';
+}
 function advancedInputs() {
   $('column-advanced').replaceChildren();
   for(const [key,label,value,min,max] of advanced) {
@@ -61,10 +89,11 @@ function modeChanged() {
   document.querySelectorAll('.range-cell input').forEach(input => {input.disabled = !ensemble;});
   const hydro=$('pressure-source').value==='ohq_column';
   for(const field of ['min','max']) $('failure_depth_m-'+field).disabled=hydro||!ensemble;
-  $('range-help').textContent = ensemble ? 'Each range is sampled independently and uniformly. These example ranges are illustrative.' : 'The deterministic run uses the value column.';
+  $('range-help').textContent = ensemble ? 'Each mechanical range is sampled independently and uniformly. These example ranges are illustrative.' : 'The deterministic run uses the value column.';
+  hydraulicChanged();
 }
 function reset() {
-  inputs();advancedInputs(); $('mode').value = 'deterministic';$('pressure-source').value='ohq_column';
+  inputs();advancedInputs();hydraulicInputs();$('sample-hydraulics').checked=false; $('mode').value = 'deterministic';$('pressure-source').value='ohq_column';
   for(const field of ['value','min','max']) $('failure_depth_m-'+field).value='1';
   for(const [id,value] of Object.entries({rainfall:'40','rain-duration':'6',duration:'24',ksat:'0.5','initial-theta':'0.3',base:'sealed'})) $(id).value=value;
   $('pressure').value = '0, 0\n2, 0.15\n4, 0.35\n6, 0.65\n8, 1\n10, 0.75\n12, 0.45';
@@ -81,7 +110,9 @@ function scenario() {
     parameters.failure_depth_m.min=parameters.failure_depth_m.max=parameters.failure_depth_m.value;
     const column=Object.fromEntries(advanced.map(([key])=>[key,Number($('column-'+key).value)]));
     Object.assign(column,{rainfall_mm_h:Number($('rainfall').value),rain_duration_h:Number($('rain-duration').value),duration_h:Number($('duration').value),ksat_m_day:Number($('ksat').value),initial_theta:Number($('initial-theta').value),base:$('base').value});
-    return {mode:$('mode').value,pressure_source:source,parameters,column,samples:Number($('samples').value),seed:Number($('seed').value)};
+    const request={mode:$('mode').value,pressure_source:source,parameters,column,samples:Number($('samples').value),seed:Number($('seed').value)};
+    if($('mode').value==='ensemble'&&$('sample-hydraulics').checked) request.hydraulic_uncertainty=Object.fromEntries(hydraulicDefinitions.map(([key])=>[key,{min:Number($(`hydraulic-${key}-min`).value),max:Number($(`hydraulic-${key}-max`).value),distribution:$(`hydraulic-${key}-distribution`).value}]));
+    return request;
   }
   const pressure_history = $('pressure').value.trim().split('\n').map((line, index) => {
     const parts = line.trim().split(/[,\s]+/).map(Number);
@@ -129,7 +160,7 @@ function chart(rows) {
 function pressureChart(rows) {
   const svg=$('pressure-chart');svg.replaceChildren();
   const left=55,right=675,top=20,bottom=185;
-  const low=Math.min(0,...rows.map(row=>row.pressure_head_m)), high=Math.max(0.1,...rows.map(row=>row.pressure_head_m));
+  const low=Math.min(0,...rows.map(row=>row.pressure_p05_m??row.pressure_head_m)), high=Math.max(0.1,...rows.map(row=>row.pressure_p95_m??row.pressure_head_m));
   const x=t=>left+(t-rows[0].time_h)/(rows.at(-1).time_h-rows[0].time_h)*(right-left);
   const y=v=>bottom-(v-low)/(high-low)*(bottom-top);
   for(let i=0;i<=4;i++) {const value=low+(high-low)*i/4;
@@ -137,6 +168,11 @@ function pressureChart(rows) {
     svg.append(element('text',{x:left-8,y:y(value)+4,'text-anchor':'end'},value.toFixed(2)));
     const time=rows[0].time_h+(rows.at(-1).time_h-rows[0].time_h)*i/4;
     svg.append(element('text',{x:x(time),y:bottom+23,'text-anchor':'middle'},Number(time.toFixed(2))));
+  }
+  if(rows[0].pressure_p05_m!==undefined) {
+    const upper=rows.map((row,i)=>`${i?'L':'M'}${x(row.time_h)},${y(row.pressure_p95_m)}`).join(' ');
+    const lower=[...rows].reverse().map(row=>`L${x(row.time_h)},${y(row.pressure_p05_m)}`).join(' ');
+    svg.append(element('path',{d:upper+' '+lower+' Z',fill:'#dceaf4'}));
   }
   svg.append(element('path',{d:rows.map((row,i)=>`${i?'L':'M'}${x(row.time_h)},${y(row.pressure_head_m)}`).join(' '),fill:'none',stroke:'#376e96','stroke-width':3}));
   svg.append(element('text',{x:left,y:13},'Pressure head (m)'));
@@ -149,11 +185,11 @@ function showResult(data) {
   $('probability-label').textContent = ensemble ? 'P(min FS < 1)' : 'Threshold crossed';
   $('probability').textContent = ensemble ? `${(100*data.event_probability).toFixed(1)}%` : data.event_probability ? 'Yes' : 'No';
   $('count').textContent = data.samples.toLocaleString();
-  $('chart-note').textContent = ensemble ? 'Solid line: median FS. Shading: 5–95% range. Independent uniform mechanical uncertainty; pressure history held fixed.' : data.ohq_hydrology_used ? 'Fixed mechanical inputs with OHQ-simulated pressure. FS evaluated at the selected output times.' : 'Fixed mechanical inputs with prescribed pressure. FS evaluated at supplied times.';
+  $('chart-note').textContent = data.hydraulic_uncertainty_sampled ? 'Solid lines: pointwise medians; shading: 5–95% ranges. Each realization has its own OHQ pressure history. Hydraulic and mechanical inputs are independent.' : ensemble ? 'Solid line: median FS. Shading: 5–95% range. Independent uniform mechanical uncertainty; pressure history held fixed.' : data.ohq_hydrology_used ? 'Fixed mechanical inputs with OHQ-simulated pressure. FS evaluated at the selected output times.' : 'Fixed mechanical inputs with prescribed pressure. FS evaluated at supplied times.';
   chart(data.series);
   $('hydrology-result').hidden=!data.ohq_hydrology_used;
   if(data.ohq_hydrology_used) {
-    $('water-balance').textContent=`Rainfall total: ${(data.hydrology.rainfall_total_m*1000).toFixed(1)} mm. Maximum water-balance residual: ${data.hydrology.water_balance_max_residual_m3.toExponential(2)} m³ over 1 m². Base: ${data.hydrology.specification.base==='sealed'?'sealed':'unit-gradient drainage'}.`;
+    $('water-balance').textContent=`Rainfall total: ${(data.hydrology.rainfall_total_m*1000).toFixed(1)} mm. Maximum water-balance residual: ${data.hydrology.water_balance_max_residual_m3.toExponential(2)} m³ over 1 m², across ${data.hydrology.realizations??1} OHQ run(s). Base: ${data.hydrology.specification.base==='sealed'?'sealed':'unit-gradient drainage'}.`;
     pressureChart(data.series);
   }
   $('series').replaceChildren();
@@ -206,6 +242,7 @@ $('scenario').addEventListener('submit',async event=>{
   finally{$('submit').disabled=$('pressure-source').value==='ohq_column'&&!engineAvailable;}
 });
 $('cancel').onclick=async()=>{try{await api(`/api/jobs/${currentJob}`,{method:'DELETE'});}catch(error){$('status').textContent=error.message;}};
+$('sample-hydraulics').onchange=hydraulicChanged;
 $('mode').onchange=modeChanged;$('reset').onclick=reset;
 $('pressure-source').onchange=()=>{if($('pressure-source').value==='ohq_column') {for(const field of ['value','min','max']) $('failure_depth_m-'+field).value=$('failure_depth_m-value').value;}driverChanged();};
 $('download').onclick=()=>{if(!exported)return;const url=URL.createObjectURL(new Blob([JSON.stringify(exported,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download=`slope-${exported.job.id}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};

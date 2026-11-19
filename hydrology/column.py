@@ -185,8 +185,8 @@ def map_pressure(heads, depths, target):
     return heads[-1]
 
 
-def simulate(folder, spec, failure_depth, cancelled=lambda:False):
-    spec=validate_column(spec,failure_depth)
+def run_engine(folder, model, cancelled=lambda:False):
+    """Run a generated local model using the pinned console and its raw export."""
     if not ready():
         raise ValueError('OHQ console is not built. Run python3 scripts/build_ohq.py --qmake /path/to/qmake.')
     build=json.loads((BINARY.parent/'build.json').read_text())
@@ -197,7 +197,6 @@ def simulate(folder, spec, failure_depth, cancelled=lambda:False):
     except subprocess.CalledProcessError as error:
         raise ValueError('OHQ source dependency differs from the pin; restore or deliberately update it before running.') from error
     folder=Path(folder).resolve()
-    model=render(folder,spec)
     for name in ('raw_observations.txt','observations.csv'):
         (folder/name).unlink(missing_ok=True)
     log=folder/'ohq.log'
@@ -207,17 +206,33 @@ def simulate(folder, spec, failure_depth, cancelled=lambda:False):
         process=subprocess.Popen([str(BINARY),str(model),'--resources',str(ENGINE/'resources')+'/', '--quiet'],
                                  cwd=folder,stdout=stream,stderr=subprocess.STDOUT,env=env)
         started=time.monotonic()
-        while process.poll() is None:
-            if cancelled() or time.monotonic()-started > 125:
+        try:
+            while process.poll() is None:
+                if cancelled() or time.monotonic()-started > 125:
+                    process.terminate()
+                    try:process.wait(timeout=3)
+                    except subprocess.TimeoutExpired:process.kill();process.wait()
+                    if cancelled():raise InterruptedError('Run cancelled.')
+                    raise ValueError('OHQ column exceeded its time limit.')
+                time.sleep(.05)
+        except BaseException:
+            # Includes Ctrl+C in the CLI: never leave an OHQ child running.
+            if process.poll() is None:
                 process.terminate()
                 try:process.wait(timeout=3)
                 except subprocess.TimeoutExpired:process.kill();process.wait()
-                if cancelled():raise InterruptedError('Run cancelled.')
-                raise ValueError('OHQ column exceeded its time limit.')
-            time.sleep(.05)
+            raise
+
     if process.returncode != 0:
         raise ValueError(f'OHQ failed (exit {process.returncode}); see the job hydrology/ohq.log.')
-    observations=parse_raw(folder/'raw_observations.txt')
+    return parse_raw(folder/'raw_observations.txt')
+
+
+def simulate(folder, spec, failure_depth, cancelled=lambda:False):
+    spec=validate_column(spec,failure_depth)
+    folder=Path(folder).resolve()
+    model=render(folder,spec)
+    observations=run_engine(folder,model,cancelled)
     set_initial_observations(observations,spec)
     duration=spec['duration_h']
     times=[i*spec['output_interval_h'] for i in range(int(duration/spec['output_interval_h'])+1)]

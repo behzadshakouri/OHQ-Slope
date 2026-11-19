@@ -7,11 +7,12 @@ A local slope-stability workspace with a browser front end, a job-service back e
 - Configure a uniform infinite slope with either an OHQ rainfall column or a prescribed pressure history.
 - Select sealed or unit-gradient drainage, inspect pressure response, and check water conservation.
 - Run deterministic FS or seeded Monte Carlo calculations with independent uniform mechanical inputs.
+- Optionally sample conductivity, retention parameters, and initial moisture using independent uniform or log-uniform ranges, with one OHQ solve per realization.
 - Inspect FS time series, 5–95% ensemble bands, sampled-time instability frequency, and recent jobs.
 - Download the request, result, and calculation provenance as JSON.
 - Track asynchronous progress, cancel jobs, and retain results across server restarts.
 
-**Column mode is a prototype.** It simulates vertical rainfall infiltration with surface ponding; transient grid sensitivity remains material. Prescribed-pressure mode is available without building OHQ. Mechanical ensembles hold hydraulic inputs and column-mode failure depth fixed. No field validation, finite-slope geometry, seismic load, deformation, or live digital twin is implemented. Inputs and uncertainty ranges are synthetic. No paper materials are included.
+**Column mode is a prototype.** It simulates vertical rainfall infiltration with surface ponding; transient grid sensitivity remains material. Prescribed-pressure mode is available without building OHQ. Mechanical-only ensembles reuse one pressure history; hydraulic ensembles run OHQ separately for each sample. Column-mode geometry and failure depth are fixed. No field validation, finite-slope geometry, seismic load, deformation, or live digital twin is implemented. Inputs and uncertainty ranges are synthetic. No paper materials are included.
 
 ## Run locally
 
@@ -39,6 +40,8 @@ python3 -m uncertainty.run models/prescribed_pressure_example.json --output resu
 
 After building OHQ, run the coupled example with `python3 -m uncertainty.run models/rainfall_column_example.json --output results/column.json`.
 
+For a small hydraulic ensemble, use `python3 -m uncertainty.run models/hydraulic_ensemble_example.json --output results/hydraulic-ensemble.json`. In the interface choose Monte Carlo and enable “Sample hydraulic properties too”. Up to 100 OHQ solves are allowed per job; start with a small count. See [sampling details](docs/hydraulic_uncertainty.md).
+
 The browser, API, and command-line runner use the same workflow, stability, and uncertainty modules. See [the calculation specification](docs/calculation.md) and [API contract](docs/api.md).
 
 ## Verify
@@ -64,7 +67,7 @@ Build the console out of tree:
 python3 scripts/build_ohq.py --qmake /path/to/Qt/gcc_64/bin/qmake
 ```
 
-Qt6, a C++17 compiler, make, Armadillo, LAPACK/BLAS, GSL, and SuperLU are required; see upstream build instructions for platform details. The helper records binary provenance under ignored `build/ohq-console/`. No executable or generated kernel is committed. The pinned engine has been built locally and checked with synthetic column cases, not field validated. See [column conventions and verification limits](docs/column.md), including the time-zero observation workaround and unresolved transient spatial sensitivity.
+Qt6, a C++17 compiler, make, Armadillo, LAPACK/BLAS, GSL, and SuperLU are required; see upstream build instructions for platform details. The helper records binary provenance under ignored `build/ohq-console/`. No executable or generated kernel is committed. The pinned engine has been built locally and checked with synthetic column cases, not field validated. See [column conventions and verification limits](docs/column.md), including the time-zero observation workaround and unresolved transient spatial sensitivity. An [independent analytical diffusion check](docs/verification.md) now verifies small-amplitude flow, without claiming full nonlinear infiltration validation.
 
 ## Structure
 
@@ -87,7 +90,7 @@ Qt6, a C++17 compiler, make, Armadillo, LAPACK/BLAS, GSL, and SuperLU are requir
 
 1. Establish transient spatial convergence and compare the column with an independent Richards-equation benchmark.
 2. Validate pressure representation and mechanical surface-loading assumptions before interpreting failure timing.
-3. Sample hydraulic properties with a separate OHQ solve for each realization and benchmark comparable experimental cases.
+3. Establish evidence-based joint parameter distributions and benchmark comparable experimental cases.
 4. Add verified JSON diagnostics and optimize ensembles where justified.
 5. Add rainfall-conditioned pseudostatic seismic assessment.
 

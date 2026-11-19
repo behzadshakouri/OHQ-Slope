@@ -68,6 +68,21 @@ class HTTPTests(unittest.TestCase):
         self.assertTrue(result['ohq_hydrology_used'])
         self.assertLess(result['hydrology']['water_balance_max_residual_m3'],1e-7)
 
+    @unittest.skipUnless(ready(), 'Build OHQ before hydraulic HTTP check.')
+    def test_hydraulic_job_runs_distinct_realizations(self):
+        from test_coupled import request
+        scenario=request();scenario['samples']=2
+        scenario['column'].update(duration_h=2,rain_duration_h=1)
+        code,job=self.request('POST','/api/jobs',scenario)
+        self.assertEqual(code,202)
+        status=self.wait_for(job['id'])
+        self.assertEqual(status['state'],'completed',status['message'])
+        _,result=self.request('GET',f"/api/jobs/{job['id']}/result")
+        self.assertTrue(result['hydraulic_uncertainty_sampled'])
+        self.assertEqual(len(result['realizations']),2)
+        self.assertIn('pressure_p95_m',result['series'][-1])
+        self.assertNotEqual(result['realizations'][0]['hydraulic'],result['realizations'][1]['hydraulic'])
+
     def test_input_errors_and_origin(self):
         self.assertEqual(self.request('POST','/api/jobs',{})[0],400)
         self.assertEqual(self.request('POST','/api/jobs',scenario(),{'Origin':'https://other.example'})[0],403)

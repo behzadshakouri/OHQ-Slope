@@ -21,6 +21,16 @@ Each job directory contains `request.json`, `status.json`, `provenance.json`, an
 
 ## Rainfall column requests
 
-Set `pressure_source` to `ohq_column` and provide `column` as in `models/rainfall_column_example.json`. No pressure-history field is required. The adapter generates that history from OHQ, checks mass conservation, then calculates FS. Set `pressure_source` to `prescribed_history` (the default for older requests) to use a supplied history. Column mode requires fixed failure depth, including equal min/value/max in ensemble mode; other mechanical inputs can vary. Hydraulic parameters remain fixed.
+Set `pressure_source` to `ohq_column` and provide `column` as in `models/rainfall_column_example.json`. No pressure-history field is required. The adapter generates that history from OHQ, checks mass conservation, then calculates FS. Set `pressure_source` to `prescribed_history` (the default for older requests) to use a supplied history. Column mode requires fixed failure depth, including equal min/value/max in ensemble mode; other mechanical inputs can vary. Hydraulic parameters remain fixed unless per-realization hydraulic sampling is enabled as described below.
 
-Completed column results include `hydrology`: the specification, cell-reference depths, pressure/moisture profiles, surface and drainage storage, water-balance residual, binary checksum, build provenance, and initial-state convention. Submitted provenance records the requested coupling; the result's `ohq_hydrology_used` records the completed calculation mode. Raw OHQ outputs and logs remain in the local job's `hydrology/` folder and are not exposed as arbitrary downloadable paths.
+Completed single-column results (deterministic or mechanical-only ensembles) include `hydrology`: the specification, cell-reference depths, pressure/moisture profiles, surface and drainage storage, water-balance residual, binary checksum, build provenance, and initial-state convention. Submitted provenance records the requested coupling; the result's `ohq_hydrology_used` records the completed calculation mode. Raw OHQ outputs and logs remain in the local job's `hydrology/` folder and are not exposed as arbitrary downloadable paths.
+
+## Per-realization hydraulic sampling
+
+For an ensemble in column mode, add a nonempty `hydraulic_uncertainty` object. Each key is one of `ksat_m_day`, `alpha_per_m`, `n`, or `initial_theta` and contains `min`, `max`, and `distribution` (`uniform` or `log_uniform`). Example:
+
+```json
+{"hydraulic_uncertainty":{"ksat_m_day":{"min":0.35,"max":0.65,"distribution":"log_uniform"}}}
+```
+
+Hydraulic jobs are limited to 100 realizations. Ranges must contain nominal values and remain physically admissible. A distinct OHQ solve is performed for each sample. Results set `hydraulic_uncertainty_sampled=true`, include a `realizations` ledger, and add `pressure_p05_m` and `pressure_p95_m` to each series row; `pressure_head_m` is then the pointwise median. No single realization's profile is labelled as the ensemble profile. A failed trial fails the job without an estimated probability.

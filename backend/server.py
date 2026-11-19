@@ -73,7 +73,7 @@ class Jobs:
                 'engine': json.loads((ROOT / 'config/engine.json').read_text()),
                 'calculation': 'infinite_slope_reference_v1',
                 'source_sha256': {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
-                    for name in ('stability/infinite_slope.py', 'uncertainty/ensemble.py', 'backend/server.py', 'backend/workflow.py', 'hydrology/column.py', 'components/column_boundaries.json', 'external/OpenHydroQual/resources/unsaturated_soil.json', 'external/OpenHydroQual/resources/main_components.json')},
+                    for name in ('stability/infinite_slope.py', 'uncertainty/ensemble.py', 'backend/server.py', 'backend/workflow.py', 'hydrology/column.py', 'uncertainty/coupled.py', 'components/column_boundaries.json', 'external/OpenHydroQual/resources/unsaturated_soil.json', 'external/OpenHydroQual/resources/main_components.json')},
                 'pressure_source': request['pressure_source'], 'ohq_hydrology_requested': request['pressure_source']=='ohq_column',
             })
             self.items[job_id] = {'id': job_id, 'state': 'queued', 'progress': 0,
