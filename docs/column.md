@@ -66,6 +66,6 @@ FS uses fixed total unit weight per realization, omits suction strength, and cur
 
 ## Next verification work
 
-Compare an independent Richards-equation benchmark, refine spatial resolution and output spacing, examine the representative-head convention and boundary discretization, then move to the reference experimental case. Add appropriate mechanical treatment of surface loading and an explicit unsaturated strength model if those effects are within the study scope. The reference experimental paper and report remain outside this software repository.
+Extend the independent unsaturated fixed-flux Richards comparison to cover ponding and saturation, refine spatial resolution and output spacing, examine the representative-head convention and boundary discretization, then move to the reference experimental case. Add appropriate mechanical treatment of surface loading and an explicit unsaturated strength model if those effects are within the study scope. The reference experimental paper and report remain outside this software repository.
 
-See [independent flow verification](verification.md) for the analytical small-amplitude diffusion check and the unresolved rainfall-grid investigation. Passing the smooth benchmark does not establish nonlinear wetting-front accuracy.
+See [independent flow verification](verification.md) for analytical small-amplitude diffusion, an independent nonlinear unsaturated fixed-flux comparison, and the unresolved rainfall-grid investigation. Passing those benchmarks does not establish accuracy of the production ponding boundary or sharp saturated wetting fronts.

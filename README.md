@@ -67,7 +67,7 @@ Build the console out of tree:
 python3 scripts/build_ohq.py --qmake /path/to/Qt/gcc_64/bin/qmake
 ```
 
-Qt6, a C++17 compiler, make, Armadillo, LAPACK/BLAS, GSL, and SuperLU are required; see upstream build instructions for platform details. The helper records binary provenance under ignored `build/ohq-console/`. No executable or generated kernel is committed. The pinned engine has been built locally and checked with synthetic column cases, not field validated. See [column conventions and verification limits](docs/column.md), including the time-zero observation workaround and unresolved transient spatial sensitivity. An [independent analytical diffusion check](docs/verification.md) now verifies small-amplitude flow, without claiming full nonlinear infiltration validation.
+Qt6, a C++17 compiler, make, Armadillo, LAPACK/BLAS, GSL, and SuperLU are required; see upstream build instructions for platform details. The helper records binary provenance under ignored `build/ohq-console/`. No executable or generated kernel is committed. The pinned engine has been built locally and checked with synthetic column cases, not field validated. See [column conventions and verification limits](docs/column.md), including the time-zero observation workaround and unresolved transient spatial sensitivity. [Independent flow checks](docs/verification.md) cover analytical small-amplitude diffusion and nonlinear unsaturated infiltration with a fixed rainfall flux. The production ponding boundary remains unverified against an independent solver.
 
 ## Structure
 
@@ -80,7 +80,7 @@ Qt6, a C++17 compiler, make, Armadillo, LAPACK/BLAS, GSL, and SuperLU are requir
 | `uncertainty/` | Seeded ensemble calculation and CLI |
 | `models/` | Synthetic runnable input specifications |
 | `tests/` | Scientific and HTTP integration checks |
-| `validation/` | Reserved for future hydrologic and external-model comparisons |
+| `validation/` | Analytical diffusion, independent nonlinear infiltration, and rainfall refinement diagnostics |
 | `components/` | Column boundary definitions; future FS JSON diagnostics |
 | `config/` | Engine provenance |
 | `external/OpenHydroQual/` | Pinned engine submodule |
@@ -88,7 +88,7 @@ Qt6, a C++17 compiler, make, Armadillo, LAPACK/BLAS, GSL, and SuperLU are requir
 
 ## Next development stages
 
-1. Establish transient spatial convergence and compare the column with an independent Richards-equation benchmark.
+1. Establish transient spatial convergence and independently verify the production ponding boundary; extend the existing unsaturated Richards comparison into the saturated regime.
 2. Validate pressure representation and mechanical surface-loading assumptions before interpreting failure timing.
 3. Establish evidence-based joint parameter distributions and benchmark comparable experimental cases.
 4. Add verified JSON diagnostics and optimize ensembles where justified.
