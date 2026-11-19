@@ -1,6 +1,29 @@
 # OHQ-Slope
 
-A local slope-stability workspace with a browser front end, a job-service back end, and independently usable scientific calculations. A pinned OpenHydroQual console supplies an optional vertical rainfall-column simulation.
+[![Checks](https://github.com/behzadshakouri/OHQ-Slope/actions/workflows/checks.yml/badge.svg)](https://github.com/behzadshakouri/OHQ-Slope/actions/workflows/checks.yml)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](#run-locally)
+[![License: AGPL v3 or later](https://img.shields.io/badge/License-AGPL--3.0--or--later-blue)](LICENSE)
+[![Status: research prototype](https://img.shields.io/badge/Status-research%20prototype-orange)](#current-capability)
+
+Rainfall-driven slope stability and uncertainty quantification with
+[OpenHydroQual](https://openhydroqual.com/), verified infinite-slope mechanics,
+and a local scenario app.
+
+[Run locally](#run-locally) · [Governing calculation](docs/calculation.md) · [JSON component](docs/json_stability.md) · [Verification](docs/verification.md) · [Contributing](CONTRIBUTING.md)
+
+## About
+
+OHQ-Slope connects a pinned OpenHydroQual rainfall-column model to a uniform
+infinite-slope factor-of-safety calculation. A browser workspace, local job
+service, and command-line runner share the same workflow. Seeded ensembles
+propagate mechanical uncertainty and, optionally, hydraulic uncertainty through
+separate OHQ realizations.
+
+The stability calculation is available as a Python reference and as a custom OHQ
+JSON component, checked against the reference for every realization. Conservation,
+analytical limits, independent flow comparisons, and numerical refinement checks
+are reported separately from experimental validation. Live digital-twin operation
+remains a future stage.
 
 ## Current capability
 
@@ -59,6 +82,17 @@ Node is optional for the JavaScript syntax check. HTTP integration tests need pe
 
 ## OHQ dependency
 
+### OpenHydroQual resources
+
+| Resource | Link |
+|---|---|
+| Project website | [openhydroqual.com](https://openhydroqual.com/) |
+| Documentation and tutorials | [OpenHydroQual knowledge base](https://openhydroqual.com/knowledge-base/) |
+| Example models | [Examples portal](https://examples.openhydroqual.com/) · [source repository](https://github.com/ArashMassoudieh/OpenHydroQual-Examples) |
+| Source code and releases | [ArashMassoudieh/OpenHydroQual](https://github.com/ArashMassoudieh/OpenHydroQual) |
+
+### Pinned source and build
+
 ```sh
 git submodule update --init --recursive
 python3 scripts/check_dependency.py
@@ -91,7 +125,7 @@ Qt6, a C++17 compiler, make, Armadillo, LAPACK/BLAS, GSL, and SuperLU are requir
 
 ## Next development stages
 
-1. Resolve the transient pressure gap identified by the independent ponding/saturation comparison and establish spatial convergence.
+1. Implement and verify a consistent cell-centred column/surface formulation, following the [controlled pressure-gap diagnosis](docs/ponding_diagnosis.md), and establish spatial convergence across cases.
 2. Validate pressure representation and mechanical surface-loading assumptions before interpreting failure timing.
 3. Establish evidence-based joint parameter distributions and benchmark comparable experimental cases.
 4. Extend the implemented JSON diagnostic where justified; verify interpreter/kernel parity before enabling generated kernels.
@@ -101,4 +135,18 @@ The front end and back end are part of the current application. Live sensors, sc
 
 ## Dependencies and licensing
 
-OpenHydroQual retains its upstream license in `external/OpenHydroQual/LICENSE`. No separate license for newly authored project code is selected yet.
+OHQ-Slope's newly authored code and documentation are distributed under
+[AGPL-3.0-or-later](LICENSE). OpenHydroQual and jsoncpp retain their upstream
+licenses and notices; see [NOTICE.md](NOTICE.md).
+
+## Citation and project metadata
+
+If you use this software, cite [CITATION.cff](CITATION.cff) and record the exact
+Git commit used for your calculations. Cite OpenHydroQual separately for the
+simulation engine, following its upstream publication and documentation.
+
+The repository About description and topic tags are tracked in
+[.github/repository.json](.github/repository.json). These GitHub settings require
+a separate authenticated update; see [repository metadata](docs/repository_metadata.md).
+The Checks workflow runs after pushing and explicitly skips native OHQ checks
+when its console has not been built. A passing CI badge is not field validation.

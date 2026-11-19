@@ -1,0 +1,19 @@
+{
+  "owner": "behzadshakouri",
+  "name": "OHQ-Slope",
+  "description": "Rainfall-driven slope stability and uncertainty quantification with OpenHydroQual, verified infinite-slope mechanics, and a local scenario app.",
+  "homepage": "https://openhydroqual.com/",
+  "topics": [
+    "openhydroqual",
+    "slope-stability",
+    "factor-of-safety",
+    "geotechnical-engineering",
+    "hydrology",
+    "rainfall-infiltration",
+    "uncertainty-quantification",
+    "monte-carlo",
+    "hydroinformatics",
+    "research-software",
+    "python"
+  ]
+}

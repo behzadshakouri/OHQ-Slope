@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+title: OHQ-Slope
+message: >-
+  If you use OHQ-Slope, cite the software and identify the exact Git commit
+  used in your calculations. Cite OpenHydroQual separately for the engine.
+type: software
+authors:
+  - family-names: Shakouri
+    given-names: Behzad
+repository-code: https://github.com/behzadshakouri/OHQ-Slope
+url: https://github.com/behzadshakouri/OHQ-Slope
+license: AGPL-3.0-or-later
+abstract: >-
+  A local research workspace for rainfall-driven slope stability and
+  uncertainty quantification using OpenHydroQual hydrology, an infinite-slope
+  factor-of-safety calculation, and independently checked JSON diagnostics.
+keywords:
+  - OpenHydroQual
+  - slope stability
+  - factor of safety
+  - rainfall infiltration
+  - uncertainty quantification
+  - Monte Carlo
+  - hydroinformatics

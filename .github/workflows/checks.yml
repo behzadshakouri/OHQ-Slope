@@ -1,0 +1,34 @@
+name: Checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python-reference:
+    name: Python reference and local API
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ['3.10', '3.13']
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Verify pinned source dependency
+        run: python scripts/check_dependency.py
+      - name: Run reference, guard, and HTTP tests
+        run: python -m unittest discover -s tests -v
+      - name: Check repository metadata
+        run: python scripts/configure_repository.py
+      - name: Check browser JavaScript syntax
+        run: node --check frontend/app.js
+      # Native OHQ is not built in this workflow. Engine-dependent scientific
+      # checks are explicitly skipped; the badge is not hydrologic validation.
