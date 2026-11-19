@@ -121,6 +121,13 @@ python3 -m validation.ponding --output results/ponding-check.json
 
 The JSON output records reference profiles, grid/time sensitivity, production differences, the analytical final water level, and source/engine provenance. Resolving the transient gap remains necessary before experimental-case interpretation.
 
+A [controlled eight-variant study](ponding_diagnosis.md) now separates head
+placement, conductivity, surface smoothing, and time integration. At 32 cells,
+matching the production discrete laws reduces OHQ/reference disagreement to
+about 0.001 m with a quarter-sized OHQ step, while the difference from the
+alternative formulation remains about 0.047 m. The formulation gap decreases
+under independent 32/64/128-cell refinement but is not eliminated.
+
 ## Original rainfall grid sensitivity is still unresolved
 
 The smooth diffusion check passes, but the rainfall-column wetting transition remains sensitive to block size. The earlier 16-to-32-cell pressure difference was about 0.13 m, despite much closer late hydrostatic states. Conservation and a smooth-flow benchmark do not establish convergence of a sharp nonlinear wetting front.

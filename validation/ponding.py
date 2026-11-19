@@ -55,23 +55,40 @@ def tridiagonal(lower, diagonal, upper, rhs):
     return result
 
 
-def reference(cells=64, step_days=.0005, spec=None):
+def reference(cells=64, step_days=.0005, spec=None, *, head_reference='centre',
+              conductivity='arithmetic', surface_boundary='complementarity'):
+    """Independent finite-volume integration; keyword variants are diagnostic.
+
+    Defaults retain the cell-centred physical comparison. The top/maximum/
+    smoothed combination reproduces production discrete laws for controlled
+    attribution and implementation checks, not independent physical validation.
+    """
     s=dict(SPEC if spec is None else spec)
     if not isinstance(cells,int) or isinstance(cells,bool) or cells<2 or not math.isfinite(step_days) or step_days<=0:
         raise ValueError('Use at least two cells and a finite positive step.')
+    if head_reference not in ('centre','top') or conductivity not in ('arithmetic','maximum') or surface_boundary not in ('complementarity','smoothed'):
+        raise ValueError('Unsupported controlled ponding variant.')
     dx=s['depth_m']/cells;half=dx/2
+    offset=half if head_reference=='centre' else 0.
     state=[0.]+[initial_pressure(s)]*cells
     times=[i*s['output_interval_h'] for i in range(round(s['duration_h']/s['output_interval_h'])+1)]
     rain_end=s['rain_duration_h']/24
     t=0.;steps=0;max_residual=0.;history=[];profiles=[]
     max_balance=0.;initial=s['depth_m']*s['initial_theta']
 
+    def top_flux(h,pressure,available):
+        capacity=s['ksat_m_day']*(h-pressure+offset)/half
+        if surface_boundary=='smoothed':return capacity*max(0.,h)/(max(0.,h)+.001)
+        return min(available,capacity)
+
+    def interface_k(left,right):
+        return max(left,right) if conductivity=='maximum' else .5*(left+right)
+
     def fluxes(v,available):
         k=[retention(p,s)[2] for p in v[1:]]
-        # Standard ponded head boundary at the surface, no artificial gating.
-        capacity=s['ksat_m_day']*(v[0]-v[1]+half)/half
-        flux=[min(available,capacity)]
-        flux.extend(.5*(a+b)*(1-(right-left)/dx) for a,b,left,right in zip(k,k[1:],v[1:],v[2:]))
+        # The default is a standard ponded-head/water-availability boundary.
+        flux=[top_flux(v[0],v[1],available)]
+        flux.extend(interface_k(a,b)*(1-(right-left)/dx) for a,b,left,right in zip(k,k[1:],v[1:],v[2:]))
         flux.append(0.)
         return flux
 
@@ -91,17 +108,17 @@ def reference(cells=64, step_days=.0005, spec=None):
             # Local dependence gives a tridiagonal Jacobian. Differentiate
             # each interface flux rather than copying engine expressions.
             q=fluxes(v,available)
-            conductivity=[retention(p,s)[2] for p in v[1:]]
+            local_k=[retention(p,s)[2] for p in v[1:]]
             for j in range(size):
                 eps=1e-7*max(1,abs(v[j]))
                 changed_k=retention(v[j]+eps,s)[2] if j else None
                 def changed_value(index):return v[index]+(eps if index==j else 0.)
                 def changed_flux(face):
                     if face==cells:return 0.
-                    if face==0:return min(available,s['ksat_m_day']*(changed_value(0)-changed_value(1)+half)/half)
-                    left_k=changed_k if face==j else conductivity[face-1]
-                    right_k=changed_k if face+1==j else conductivity[face]
-                    return .5*(left_k+right_k)*(1-(changed_value(face+1)-changed_value(face))/dx)
+                    if face==0:return top_flux(changed_value(0),changed_value(1),available)
+                    left_k=changed_k if face==j else local_k[face-1]
+                    right_k=changed_k if face+1==j else local_k[face]
+                    return interface_k(left_k,right_k)*(1-(changed_value(face+1)-changed_value(face))/dx)
                 changed={face:(changed_flux(face)-q[face])/eps for face in {max(0,j-1),j}}
                 for i in range(max(0,j-1),min(size,j+2)):
                     if i==0:derivative=(1. if j==0 else 0.)+dt*changed.get(0,0.)
@@ -123,7 +140,7 @@ def reference(cells=64, step_days=.0005, spec=None):
         raise ValueError('Ponding reference Newton iteration did not converge.')
 
     def record(hours):
-        depths=[(i+.5)*dx for i in range(cells)]
+        depths=[i*dx+offset for i in range(cells)]
         pressure=interpolate(list(zip(depths,state[1:])),FAILURE_DEPTH)
         history.append({'time_h':hours,'head_m':pressure,'surface_depth_m':state[0]})
         profiles.append({'time_h':hours,'pressure_head_m':state[1:],
@@ -148,7 +165,8 @@ def reference(cells=64, step_days=.0005, spec=None):
             max_balance=max(max_balance,abs(water-expected))
         record(hours)
     return {'cells':cells,'step_days':step_days,'steps':steps,'pressure_history':history,
-            'reference_depths_m':[(i+.5)*dx for i in range(cells)],'profiles':profiles,
+            'reference_depths_m':[i*dx+offset for i in range(cells)],'profiles':profiles,
+            'variant':{'head_reference':head_reference,'conductivity':conductivity,'surface_boundary':surface_boundary},
             'maximum_nonlinear_residual_m':max_residual,'water_balance_max_residual_m3':max_balance}
 
 
