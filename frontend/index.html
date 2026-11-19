@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>OHQ-Slope · Scenario workspace</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
+<body>
+<header><a class="brand" href="/">OHQ<span> / Slope</span></a><span class="tag">Local research workspace</span></header>
+<main>
+<section class="intro"><p class="eyebrow">SLOPE STABILITY / UNCERTAINTY</p><h1>Explore the margin<br>before instability.</h1><p>Define a soil mantle, prescribe pressure at its failure plane, and inspect how material uncertainty changes factor of safety.</p></section>
+<div class="notice"><strong>Reference calculation</strong><span>Pressure is supplied by you. OHQ rainfall simulation is not connected yet. No live sensors or forecasting.</span></div>
+<div class="workspace">
+<form id="scenario" class="panel inputs">
+<div class="section-title"><h2>Scenario</h2><button type="button" id="reset" class="text-button">Reset example</button></div>
+<label for="mode">Calculation</label><select id="mode"><option value="deterministic">Deterministic · fixed inputs</option><option value="ensemble">Monte Carlo · independent uniform ranges</option></select>
+<div class="table-wrap"><table><caption>Mechanical properties</caption><thead><tr><th scope="col">Parameter</th><th scope="col">Value</th><th scope="col" class="range-col">Min</th><th scope="col" class="range-col">Max</th></tr></thead><tbody id="parameters"></tbody></table></div>
+<p class="help" id="range-help">The deterministic run uses the value column.</p>
+<div class="two-col" id="ensemble-options" hidden><div><label for="samples">Realizations</label><input id="samples" type="number" min="1" max="10000" step="1" value="2000"></div><div><label for="seed">Random seed</label><input id="seed" type="number" min="0" max="4294967295" step="1" value="42"></div></div>
+<label for="pressure">Pressure history at the failure plane</label><p class="help">One row per time: hours, pressure head in metres. All realizations share this history.</p><textarea id="pressure" rows="7" spellcheck="false" aria-describedby="pressure-help"></textarea><p class="help" id="pressure-help">Negative head adds no suction strength. Minima and crossings are evaluated only at these times.</p>
+<button id="submit" class="primary" type="submit">Run scenario</button><p id="form-error" class="error" role="alert"></p>
+</form>
+<section class="results-column">
+<div class="panel visual"><div class="section-title"><h2>Slope section</h2><span class="subtle">Schematic · not to scale</span></div><svg id="slope" viewBox="0 0 700 210" role="img" aria-label="Schematic soil mantle with a potential failure plane"><path d="M30 60 H220 L520 180 H670 V205 H30Z" fill="#d8e9e5"/><path d="M30 60 H220 L520 180 H670" fill="none" stroke="#153d39" stroke-width="3"/><path d="M210 95 L490 207" fill="none" stroke="#bc6544" stroke-width="2" stroke-dasharray="7 5"/><text x="370" y="75">Ground surface</text><text x="65" y="160">Soil mantle</text><text x="435" y="137">Candidate failure plane</text></svg><p class="help">Uniform infinite slope; vertical failure depth. No erosion, deformation, or seismic loading.</p></div>
+<div class="panel"><div class="section-title"><h2>Run status</h2><span id="state" class="state">Ready</span></div><progress id="progress" max="1" value="0" aria-label="Simulation progress"></progress><div class="section-title"><p id="status" aria-live="polite">The example uses synthetic inputs, not the flume case.</p><button type="button" id="cancel" class="text-button" hidden>Cancel run</button></div></div>
+<div class="panel output"><div class="section-title"><h2>Factor of safety</h2><button id="download" class="text-button" type="button" disabled>Download run JSON</button></div><div id="empty"><p>Run a scenario to see its stability response.</p><p class="help">FS = 1 is the model threshold. A value below 1 indicates instability under the stated assumptions.</p></div><div id="result" hidden><div class="metrics"><div><span>Median minimum FS</span><strong id="minimum"></strong></div><div><span id="probability-label">Threshold crossed</span><strong id="probability"></strong></div><div><span>Realizations</span><strong id="count"></strong></div></div><svg id="chart" viewBox="0 0 700 290" role="img" aria-label="Factor of safety over time"></svg><p id="chart-note" class="help"></p><details><summary>Numerical results and assumptions</summary><div class="table-wrap"><table><thead><tr><th>Time (h)</th><th>Head (m)</th><th>FS 5%</th><th>FS median</th><th>FS 95%</th></tr></thead><tbody id="series"></tbody></table></div><ul id="assumptions"></ul></details></div></div>
+<div class="panel history"><h2>Recent runs</h2><ul id="jobs"><li class="subtle">No runs yet.</li></ul></div>
+</section></div>
+<footer>OHQ-Slope / Infinite-slope reference model · Mechanical uncertainty only · OHQ coupling pending</footer>
+</main></body></html>

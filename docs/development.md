@@ -1,6 +1,6 @@
 # Development notes
 
-Keep hydrology, stability, and ensemble orchestration behind small interfaces. Start with interpreted OHQ runs using Python bindings or the headless runner. Do not duplicate the complete Soil template as the initial extension strategy.
+Keep hydrology, stability, and ensemble orchestration behind small interfaces. The initial app runs the external FS reference calculation on prescribed pressure histories. The next coupling stage will use interpreted OHQ runs through Python bindings or the headless runner. Do not duplicate the complete Soil template as the initial extension strategy.
 
 The external stability calculation will consume time, pressure at specified failure surfaces, geometry, and mechanical parameters. Define units, pressure sign, angle convention, and failure geometry explicitly before implementation. Do not equate block thickness with failure depth or assume representative block pressure is bottom pressure.
 
@@ -13,3 +13,7 @@ Engine fixes belong in an OHQ branch with appropriate validation. Update this pr
 External reference datasets should be described by a local configuration or manifest with checksums and provenance. Do not copy paper assets into this repository. A reproducible small synthetic benchmark belongs here.
 
 The seismic extension will initially use a pseudostatic coefficient and rainfall-conditioned pressures. Dynamic deformation, liquefaction, and shaking-generated pore pressure require separately scoped mechanics.
+
+## Interface and service status
+
+The local front end and job back end are implemented. Both web jobs and the CLI call the same stability/ensemble code. The server uses a single worker and isolated job folders; long-term scheduling, live sensors, forecast cycling, and data assimilation remain deferred. This is a local research app, not an authenticated public service.

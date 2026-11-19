@@ -1,0 +1,152 @@
+'use strict';
+const $ = id => document.getElementById(id);
+const definitions = [
+  ['cohesion_kpa', 'Effective cohesion', 'kPa', 5, 3, 7, 0, 1000],
+  ['friction_deg', 'Friction angle', 'degrees', 30, 27, 33, .01, 89],
+  ['unit_weight_kn_m3', 'Total unit weight', 'kN/m³', 18, 17, 19, 1, 40],
+  ['slope_deg', 'Slope angle', 'degrees', 30, 28, 32, .1, 89],
+  ['failure_depth_m', 'Vertical failure depth', 'm', 2, 1.8, 2.2, .01, 100],
+];
+let currentJob = null, timer = null, exported = null, viewVersion = 0;
+
+function inputs() {
+  $('parameters').replaceChildren();
+  for (const [key, label, unit, value, min, max, lower, upper] of definitions) {
+    const row = document.createElement('tr');
+    const name = document.createElement('td');
+    name.textContent = label;
+    const small = document.createElement('small'); small.textContent = unit; name.append(small); row.append(name);
+    for (const [type, initial] of [['value', value], ['min', min], ['max', max]]) {
+      const cell = document.createElement('td');
+      if (type !== 'value') cell.className = 'range-cell';
+      const input = document.createElement('input');
+      Object.assign(input, {type: 'number', id: `${key}-${type}`, value: initial, min: lower, max: upper, step: 'any', required: true});
+      input.setAttribute('aria-label', `${label}, ${type}, ${unit}`);
+      cell.append(input); row.append(cell);
+    }
+    $('parameters').append(row);
+  }
+}
+function modeChanged() {
+  const ensemble = $('mode').value === 'ensemble';
+  $('scenario').classList.toggle('deterministic', !ensemble);
+  $('ensemble-options').hidden = !ensemble;
+  document.querySelectorAll('.range-cell input').forEach(input => {input.disabled = !ensemble;});
+  $('range-help').textContent = ensemble ? 'Each range is sampled independently and uniformly. These example ranges are illustrative.' : 'The deterministic run uses the value column.';
+}
+function reset() {
+  inputs(); $('mode').value = 'deterministic';
+  $('pressure').value = '0, 0\n2, 0.15\n4, 0.35\n6, 0.65\n8, 1\n10, 0.75\n12, 0.45';
+  $('samples').value = '2000'; $('seed').value = '42'; modeChanged(); $('form-error').textContent = '';
+}
+function scenario() {
+  const parameters = {};
+  for (const [key] of definitions) {
+    parameters[key] = Object.fromEntries(['value', 'min', 'max'].map(field => [field, Number($(`${key}-${field}`).value)]));
+    if ($('mode').value === 'deterministic') parameters[key].min = parameters[key].max = parameters[key].value;
+  }
+  const pressure_history = $('pressure').value.trim().split('\n').map((line, index) => {
+    const parts = line.trim().split(/[,\s]+/).map(Number);
+    if (parts.length !== 2 || !parts.every(Number.isFinite)) throw new Error(`Pressure row ${index+1} needs two numbers: time, head.`);
+    return {time_h: parts[0], head_m: parts[1]};
+  });
+  return {mode: $('mode').value, parameters, pressure_history,
+    samples: Number($('samples').value), seed: Number($('seed').value)};
+}
+async function api(path, options = {}) {
+  const response = await fetch(path, options);
+  const value = await response.json();
+  if (!response.ok) throw new Error(value.error || `Request failed (${response.status}).`);
+  return value;
+}
+function element(tag, attrs, text) {
+  const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+function chart(rows) {
+  const svg = $('chart'); svg.replaceChildren();
+  const width=700, height=290, left=55, right=25, top=25, bottom=45;
+  const start=rows[0].time_h, end=rows.at(-1).time_h;
+  const maximum=Math.max(1.2, ...rows.map(row=>row.p95))*1.12;
+  const x=t=>left+(t-start)/(end-start)*(width-left-right);
+  const y=v=>height-bottom-v/maximum*(height-top-bottom);
+  for(let i=0;i<=4;i++) {
+    const value=maximum*i/4;
+    svg.append(element('line',{x1:left,y1:y(value),x2:width-right,y2:y(value),stroke:'#e4eae7'}));
+    svg.append(element('text',{x:left-10,y:y(value)+4,'text-anchor':'end'},value.toFixed(2)));
+    const time=start+(end-start)*i/4;
+    svg.append(element('text',{x:x(time),y:height-bottom+24,'text-anchor':'middle'},Number(time.toFixed(2))));
+  }
+  const path=(field)=>rows.map((row,i)=>`${i?'L':'M'}${x(row.time_h)},${y(row[field])}`).join(' ');
+  const band=path('p95')+' '+[...rows].reverse().map(row=>`L${x(row.time_h)},${y(row.p05)}`).join(' ')+' Z';
+  svg.append(element('path',{d:band,fill:'#d6e9e2'}));
+  svg.append(element('line',{x1:left,y1:y(1),x2:width-right,y2:y(1),stroke:'#a4482c','stroke-dasharray':'6 5'}));
+  svg.append(element('text',{x:width-right,y:y(1)-8,'text-anchor':'end',fill:'#a4482c'},'FS = 1'));
+  svg.append(element('path',{d:path('median'),fill:'none',stroke:'#215c52','stroke-width':3}));
+  svg.append(element('text',{x:width/2,y:height-5,'text-anchor':'middle'},'Time (hours)'));
+  svg.append(element('text',{x:15,y:18},'FS'));
+}
+function showResult(data) {
+  $('empty').hidden = true; $('result').hidden = false;
+  $('minimum').textContent = data.minimum_fs.median.toFixed(3);
+  const ensemble=data.mode==='ensemble';
+  $('probability-label').textContent = ensemble ? 'P(min FS < 1)' : 'Threshold crossed';
+  $('probability').textContent = ensemble ? `${(100*data.event_probability).toFixed(1)}%` : data.event_probability ? 'Yes' : 'No';
+  $('count').textContent = data.samples.toLocaleString();
+  $('chart-note').textContent = ensemble ? 'Solid line: median FS. Shading: 5–95% range. Independent uniform mechanical uncertainty; pressure history held fixed.' : 'Fixed mechanical inputs with prescribed pressure. FS evaluated at supplied times.';
+  chart(data.series);
+  $('series').replaceChildren();
+  for (const row of data.series) {
+    const tr=document.createElement('tr');
+    for(const value of [row.time_h,row.pressure_head_m,row.p05,row.median,row.p95]) {
+      const td=document.createElement('td'); td.textContent=value.toFixed(3);tr.append(td);
+    }
+    $('series').append(tr);
+  }
+  $('assumptions').replaceChildren();
+  for(const text of data.assumptions) {const li=document.createElement('li');li.textContent=text;$('assumptions').append(li);}
+}
+async function history() {
+  const data = await api('/api/jobs'); $('jobs').replaceChildren();
+  if(!data.jobs.length) {const li=document.createElement('li');li.textContent='No runs yet.';$('jobs').append(li);}
+  for(const job of data.jobs.slice(0,8)) {
+    const li=document.createElement('li');const button=document.createElement('button');button.className='text-button';
+    button.textContent=`${job.mode==='ensemble'?'Ensemble':'Deterministic'} · ${new Date(job.created_utc).toLocaleTimeString()}`;
+    button.onclick=()=>openJob(job.id);const state=document.createElement('span');state.textContent=job.state;
+    li.append(button,state);$('jobs').append(li);
+  }
+}
+async function openJob(id) {
+  clearTimeout(timer); const version=++viewVersion;currentJob=id;exported=null;$('download').disabled=true;
+  $('result').hidden=true;$('empty').hidden=false;
+  $('empty').firstElementChild.textContent='Waiting for results from this run.';
+  await poll(id, version);
+}
+async function poll(id, version) {
+  try {
+    const job=await api(`/api/jobs/${id}`);
+    if(version!==viewVersion)return;
+    $('state').textContent=job.state;$('progress').value=job.progress;$('status').textContent=job.message;
+    $('cancel').hidden=!['queued','running'].includes(job.state);
+    if(job.state==='completed') {
+      const [result,request,provenance]=await Promise.all(['result','request','provenance'].map(name=>api(`/api/jobs/${id}/${name}`)));
+      if(version!==viewVersion)return;
+      exported={job,request,result,provenance};showResult(result);$('download').disabled=false;
+    }
+    if(!['queued','running','completed'].includes(job.state)) $('empty').firstElementChild.textContent='This run did not produce results. See the run-status message.';
+    await history();
+    if(version===viewVersion && ['queued','running'].includes(job.state))timer=setTimeout(()=>poll(id,version),500);
+  } catch(error) {if(version===viewVersion)$('status').textContent=`Unable to read run: ${error.message}`;}
+}
+$('scenario').addEventListener('submit',async event=>{
+  event.preventDefault();$('form-error').textContent='';$('submit').disabled=true;
+  try {const request=scenario();const job=await api('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(request)});await openJob(job.id);}
+  catch(error){$('form-error').textContent=error.message;}
+  finally{$('submit').disabled=false;}
+});
+$('cancel').onclick=async()=>{try{await api(`/api/jobs/${currentJob}`,{method:'DELETE'});}catch(error){$('status').textContent=error.message;}};
+$('mode').onchange=modeChanged;$('reset').onclick=reset;
+$('download').onclick=()=>{if(!exported)return;const url=URL.createObjectURL(new Blob([JSON.stringify(exported,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download=`slope-${exported.job.id}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
+reset();history().catch(error=>{$('status').textContent=`Server unavailable: ${error.message}`;});
