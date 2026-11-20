@@ -130,7 +130,7 @@ Qt6, a C++17 compiler, make, Armadillo, LAPACK/BLAS, GSL, and SuperLU are requir
 | `uncertainty/` | Seeded ensemble calculation and CLI |
 | `models/` | Synthetic runnable input specifications |
 | `tests/` | Scientific and HTTP integration checks |
-| `validation/` | Analytical diffusion, nonlinear infiltration, ponding/saturation, and rainfall refinement diagnostics |
+| `validation/` | Analytical diffusion, nonlinear infiltration, ponding/saturation, rainfall refinement, and [external column/archive sensitivity diagnostics](docs/column_sensitivity.md) |
 | `components/` | Column boundaries and read-only infinite-slope JSON diagnostic |
 | `config/` | Engine provenance |
 | `OpenHydroQual/` | Pinned engine submodule |
