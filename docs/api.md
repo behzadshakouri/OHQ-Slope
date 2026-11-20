@@ -27,6 +27,16 @@ Set `pressure_source` to `ohq_column` and provide `column` as in `models/rainfal
 
 Completed single-column results (deterministic or mechanical-only ensembles) include `hydrology`: the specification, cell-reference depths, pressure/moisture profiles, surface and drainage storage, water-balance residual, binary checksum, build provenance, and initial-state convention. Submitted provenance records the requested coupling; the result's `ohq_hydrology_used` records the completed calculation mode. Raw OHQ outputs and logs remain in the local job's `hydrology/` folder and are not exposed as arbitrary downloadable paths.
 
+`column.formulation` is optional: `legacy_top` (default for existing requests) or
+`cell_centred`. Cell counts are 2–32 for legacy and 2–64 for cell-centred;
+finer grids can take longer and remain subject to the native run timeout.
+The latter uses project JSON connectors, arithmetic interior
+conductivity, centre-based heads, and an unsmoothed surface boundary constrained
+by OHQ's water-availability limiter. Failure depth must lie between the first and
+last selected representative depths; no extrapolation is allowed. Results record
+`hydrology.formulation`, `component_sha256` for the new formulation, and native
+`minimum_surface_storage_m3`. See [formulation details](cell_centred_column.md).
+
 ## Per-realization hydraulic sampling
 
 For an ensemble in column mode, add a nonempty `hydraulic_uncertainty` object. Each key is one of `ksat_m_day`, `alpha_per_m`, `n`, or `initial_theta` and contains `min`, `max`, and `distribution` (`uniform` or `log_uniform`). Example:

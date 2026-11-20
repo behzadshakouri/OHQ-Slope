@@ -67,7 +67,8 @@ python3 -m validation.infiltration --output results/infiltration-check.json
 
 The output records profiles, resolution differences, conservation residuals, benchmark-source hash, and pinned engine/build provenance. Generated inputs and raw engine observations remain beside the output in its `_files` directory.
 
-This benchmark applies the rainfall flux directly to the first soil volume using an OHQ inflow time series. It has no surface-water block or ponding. To compare the same cell-centred discretization, benchmark-only block elevations place OHQ's head references at cell centres. The production adapter's top-reference convention is unchanged. All compared pressures remain negative, so saturated compressibility, surface ponding, and positive-pressure FS coupling are outside this test's scope.
+This benchmark applies the rainfall flux directly to the first soil volume using an OHQ inflow time series. It has no surface-water block or ponding. To compare the same cell-centred discretization, benchmark-only block elevations place OHQ's head references at cell centres. The default adapter retains its top-reference convention; a separate selectable
+[cell-centred formulation](cell_centred_column.md) is now available. All compared pressures remain negative, so saturated compressibility, surface ponding, and positive-pressure FS coupling are outside this test's scope.
 
 ## Ponding, saturation, and a remaining boundary/discretization gap
 
@@ -141,3 +142,13 @@ python3 -m validation.refinement --output results/refinement.json
 ```
 
 The diagnostic explicitly does not declare convergence. The ponding comparison above now measures the production-boundary discrepancy, while further spatial refinement and controlled tests of interface conductivity and surface discretization remain necessary. Do not interpret pressure bands or failure timing as free of discretization error.
+
+## Selectable cell-centred JSON column
+
+The [new formulation and six-regime study](cell_centred_column.md) implement the
+centre/arithmetic/water-availability equations through project JSON connectors.
+Same-grid independent comparisons isolate implementation agreement from spatial
+error. The dry initial state still has substantial wetting-front sensitivity, so
+this option does not establish general rainfall convergence or experimental
+validity. Earlier tables on this page describe the legacy formulation unless
+explicitly stated otherwise.

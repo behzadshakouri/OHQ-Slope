@@ -17,14 +17,19 @@ DEFAULT = {
     'initial_theta': 0.3, 'specific_storage_per_m': 0.01, 'pore_connectivity': 0.5,
     'rainfall_mm_h': 40.0, 'rain_duration_h': 6.0, 'duration_h': 24.0,
     'output_interval_h': 0.25, 'solver_step_h': 1/60,
-    'base': 'sealed',
+    'base': 'sealed', 'formulation': 'legacy_top',
 }
 
 
 def validate_column(spec, failure_depth):
+    if isinstance(spec,dict):spec={'formulation':'legacy_top',**spec}
     if not isinstance(spec, dict) or set(spec) != set(DEFAULT):
         raise ValueError('Provide the complete supported soil-column specification.')
     for name, value in spec.items():
+        if name == 'formulation':
+            if value not in ('legacy_top','cell_centred'):
+                raise ValueError('Column formulation must be legacy_top or cell_centred.')
+            continue
         if name == 'base':
             if value not in ('sealed', 'unit_gradient'):
                 raise ValueError('Base must be sealed or unit_gradient.')
@@ -39,8 +44,9 @@ def validate_column(spec, failure_depth):
     for key, (lower, upper) in bounds.items():
         if not lower <= spec[key] <= upper:
             raise ValueError(f'{key} must be between {lower} and {upper}.')
-    if not isinstance(spec['cells'], int) or not 2 <= spec['cells'] <= 32:
-        raise ValueError('Use 2 to 32 soil cells.')
+    maximum_cells=64 if spec['formulation']=='cell_centred' else 32
+    if not isinstance(spec['cells'], int) or not 2 <= spec['cells'] <= maximum_cells:
+        raise ValueError(f'Use 2 to {maximum_cells} soil cells for the selected formulation.')
     if not 0 <= spec['theta_res'] < spec['initial_theta'] < spec['theta_sat'] < 1:
         raise ValueError('Require 0 ≤ residual < initial < saturated water content < 1.')
     if spec['theta_res'] == 0:
@@ -51,10 +57,15 @@ def validate_column(spec, failure_depth):
         raise ValueError('Solver step must not exceed output spacing; use at most 50000 nominal steps.')
     if spec['duration_h']/spec['output_interval_h'] > 499:
         raise ValueError('Use at most 500 output times.')
-    last_depth = spec['depth_m'] * (spec['cells'] - 1) / spec['cells']
-    if not 0 < failure_depth <= last_depth:
-        raise ValueError(f'Failure depth must be in (0, {last_depth:g}] m, within the soil head-reference locations.')
+    depths=reference_depths(spec)
+    if not 0 < failure_depth or not depths[0] <= failure_depth <= depths[-1]:
+        raise ValueError(f'Failure depth must be positive and within [{depths[0]:g}, {depths[-1]:g}] m, the soil head-reference locations.')
     return dict(spec)
+
+
+def reference_depths(spec):
+    offset=.5 if spec.get('formulation','legacy_top')=='cell_centred' else 0.
+    return [(i+offset)*spec['depth_m']/spec['cells'] for i in range(spec['cells'])]
 
 
 def ready():
@@ -79,6 +90,8 @@ def render(folder, spec):
              f'addtemplate; filename={ROOT}/components/column_boundaries.json',
              'create source;type=Precipitation,name=Rain,timeseries=rainfall.csv',
              'create block;type=Catchment,name=Surface,area=1,depth=0,elevation=0,Slope=0.01,Width=1,ManningCoeff=0.03,depression_storage=0,Runoff_coeff=1,loss_coefficient=0,Precipitation=Rain']
+    centred=spec.get('formulation','legacy_top')=='cell_centred'
+    if centred:lines.insert(3,f'addtemplate; filename={ROOT}/components/cell_centred_column.json')
     dz = spec['depth_m']/spec['cells']
     for i in range(spec['cells']):
         fields = {'name': f'Soil{i}', 'area': 1, 'depth': dz, 'bottom_elevation': -(i+1)*dz,
@@ -87,9 +100,11 @@ def render(folder, spec):
                   'K_sat_original': spec['ksat_m_day'], 'K_sat_scale_factor': 1,
                   'specific_storage': spec['specific_storage_per_m'], 'aniso_ratio': 1}
         lines.append('create block;type=Soil,' + ','.join(f'{k}={v}' for k,v in fields.items()))
-    lines.append('create link;type=surfacewater_to_soil_link,from=Surface,to=Soil0,name=Infiltration')
+    surface_type='Column Centre Surface Link' if centred else 'surfacewater_to_soil_link'
+    soil_type='Column Centre Soil Link' if centred else 'soil_to_soil_link'
+    lines.append(f'create link;type={surface_type},from=Surface,to=Soil0,name=Infiltration')
     for i in range(spec['cells']-1):
-        lines.append(f'create link;type=soil_to_soil_link,from=Soil{i},to=Soil{i+1},name=Percolation{i}')
+        lines.append(f'create link;type={soil_type},from=Soil{i},to=Soil{i+1},name=Percolation{i}')
     lines.append('create block;type=Column Drainage Collector,name=Drainage')
     if spec['base'] == 'unit_gradient':
         lines.append(f"create link;type=Column Unit Gradient Drain,from=Soil{spec['cells']-1},to=Drainage,name=BasalDrain")
@@ -100,7 +115,7 @@ def render(folder, spec):
         lines.append(f'create observation;type=Observation,name={name},object={obj},expression={quantity},observed_data=,error_structure=normal,error_standard_deviation=1')
     settings = {'simulation_start_time':0, 'simulation_end_time':duration,
                 'initial_time_step': spec['solver_step_h']/24, 'max_timestep_increase_factor':1,
-                'minimum_timestep':1e-10, 'nr_tolerance':1e-8,
+                'minimum_timestep':1e-10, 'nr_tolerance':1e-10 if centred else 1e-8,
                 'maximum_time_allowed':120, 'make_timeseries_uniform':'No',
                 'record_results':'No', 'alloutputfile':'', 'observed_outputfile':'observations.csv',
                 'write_solution_details':'No', 'n_threads':1}
@@ -173,7 +188,7 @@ def interpolate(series, target):
 
 
 def map_pressure(heads, depths, target):
-    """Interpolate total head at known top-reference elevations, then remove elevation."""
+    """Interpolate total head at known reference elevations, then remove elevation."""
     if len(heads)!=len(depths) or not depths[0] <= target <= depths[-1]:
         raise ValueError('Failure depth outside available head references.')
     for i in range(len(depths)-1):
@@ -237,7 +252,7 @@ def simulate(folder, spec, failure_depth, cancelled=lambda:False):
     duration=spec['duration_h']
     times=[i*spec['output_interval_h'] for i in range(int(duration/spec['output_interval_h'])+1)]
     if abs(times[-1]-duration)>1e-8:times.append(duration)
-    depths=[i*spec['depth_m']/spec['cells'] for i in range(spec['cells'])]
+    depths=reference_depths(spec)
     history=[];profiles=[]
     for t in times:
         pressures=[interpolate(observations[f'pressure_{i}'],t) for i in range(spec['cells'])]
@@ -254,14 +269,21 @@ def simulate(folder, spec, failure_depth, cancelled=lambda:False):
         expected=spec['depth_m']*spec['initial_theta']+spec['rainfall_mm_h']/1000*min(t,spec['rain_duration_h'])
         residuals.append(total-expected)
     residual=max(abs(v) for v in residuals)
+    minimum_surface=min(value for _,value in observations['surface_storage'])
+    if spec['formulation']=='cell_centred' and minimum_surface < -1e-10:
+        raise ValueError('Cell-centred surface storage became negative; the ponding complementarity check failed.')
     # One square metre area: tolerance is also water-depth equivalent.
     if residual > 1e-4:
         raise ValueError(f'Column water balance failed: maximum residual {residual:.3g} m³ exceeds 1e-4 m³.')
     return {'pressure_history':history, 'specification':spec, 'reference_depths_m':depths,
             'profiles':profiles, 'water_balance_max_residual_m3':residual,
+            'minimum_surface_storage_m3':minimum_surface,
             'rainfall_total_m':spec['rainfall_mm_h']*spec['rain_duration_h']/1000,
             'failure_depth_m':failure_depth,
-            'pressure_mapping':'Linear total-head interpolation using OHQ soil top-elevation references; pressure = total head minus failure-plane elevation.',
+            'formulation':spec['formulation'],
+            'pressure_mapping':('Linear total-head interpolation at cell-centre elevations; pressure = total head minus failure-plane elevation.' if spec['formulation']=='cell_centred' else
+                               'Linear total-head interpolation using OHQ soil top-elevation references; pressure = total head minus failure-plane elevation.'),
+            'component_sha256':hashlib.sha256((ROOT/'components/cell_centred_column.json').read_bytes()).hexdigest() if spec['formulation']=='cell_centred' else None,
             'engine_binary_sha256':hashlib.sha256(BINARY.read_bytes()).hexdigest(),
             'initial_state_source':'Known initial model inputs replace OHQ time-zero observation placeholders.',
             'build':json.loads((BINARY.parent/'build.json').read_text())}

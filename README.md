@@ -30,6 +30,7 @@ remains a future stage.
 - Configure a uniform infinite slope with either an OHQ rainfall column or a prescribed pressure history.
 - Calculate FS with the Python reference or a custom OHQ JSON diagnostic, with per-realization agreement checks.
 - Select sealed or unit-gradient drainage, inspect pressure response, and check water conservation.
+- Choose legacy top-reference or cell-centred JSON flow connectors, with explicit pressure mapping and formulation provenance.
 - Run deterministic FS or seeded Monte Carlo calculations with independent uniform mechanical inputs.
 - Optionally sample conductivity, retention parameters, and initial moisture using independent uniform or log-uniform ranges, with one OHQ solve per realization.
 - Inspect FS time series, 5–95% ensemble bands, sampled-time instability frequency, and recent jobs.
@@ -68,6 +69,16 @@ For a small hydraulic ensemble, use `python3 -m uncertainty.run models/hydraulic
 
 To use the OHQ JSON stability component, choose it under **Stability calculation**, or run `python3 -m uncertainty.run models/json_stability_example.json --output results/json-stability.json`. It requires the built console, supports up to 100 realizations and 10,000 sample-time evaluations, and checks every FS against Python before reporting results. See [JSON component details](docs/json_stability.md).
 
+For the new cell-centred hydrologic formulation, choose it under **Column
+formulation** or run:
+
+```sh
+python3 -m uncertainty.run models/cell_centred_example.json --output results/cell-centred-example.json
+```
+
+Existing requests keep the legacy
+model. See [cell-centred equations and verification](docs/cell_centred_column.md).
+
 The browser, API, and command-line runner use the same workflow, stability, and uncertainty modules. See [the calculation specification](docs/calculation.md) and [API contract](docs/api.md).
 
 ## Verify
@@ -104,7 +115,7 @@ Build the console out of tree:
 python3 scripts/build_ohq.py --qmake /path/to/Qt/gcc_64/bin/qmake
 ```
 
-Qt6, a C++17 compiler, make, Armadillo, LAPACK/BLAS, GSL, and SuperLU are required; see upstream build instructions for platform details. The helper records binary provenance under ignored `build/ohq-console/`. No executable or generated kernel is committed. The pinned engine has been built locally and checked with synthetic column cases, not field validated. See [column conventions and verification limits](docs/column.md), including the time-zero observation workaround and unresolved transient spatial sensitivity. [Independent flow checks](docs/verification.md) cover analytical diffusion, nonlinear unsaturated infiltration, and ponding/saturation. The latter finds a remaining transient pressure difference of about 0.044 m at 32 cells in its synthetic case, despite close final water levels.
+Qt6, a C++17 compiler, make, Armadillo, LAPACK/BLAS, GSL, and SuperLU are required; see upstream build instructions for platform details. The helper records binary provenance under ignored `build/ohq-console/`. No executable or generated kernel is committed. The pinned engine has been built locally and checked with synthetic column cases, not field validated. See [column conventions and verification limits](docs/column.md), including the time-zero observation workaround and unresolved transient spatial sensitivity. [Independent flow checks](docs/verification.md) cover analytical diffusion, nonlinear unsaturated infiltration, and ponding/saturation. The legacy ponding case has a transient pressure difference of about 0.044 m at 32 cells. The selectable cell-centred version improves that comparison, while its drier wetting-front case still needs finer-grid investigation.
 
 ## Structure
 
@@ -125,7 +136,7 @@ Qt6, a C++17 compiler, make, Armadillo, LAPACK/BLAS, GSL, and SuperLU are requir
 
 ## Next development stages
 
-1. Implement and verify a consistent cell-centred column/surface formulation, following the [controlled pressure-gap diagnosis](docs/ponding_diagnosis.md), and establish spatial convergence across cases.
+1. Establish case-specific spatial/time accuracy of the implemented [cell-centred formulation](docs/cell_centred_column.md) across regimes before quantitative experimental inference.
 2. Validate pressure representation and mechanical surface-loading assumptions before interpreting failure timing.
 3. Establish evidence-based joint parameter distributions and benchmark comparable experimental cases.
 4. Extend the implemented JSON diagnostic where justified; verify interpreter/kernel parity before enabling generated kernels.

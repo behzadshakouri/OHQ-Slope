@@ -78,6 +78,6 @@ def execute(request,folder,progress=lambda value:None,message=lambda text:None,c
     result['hydrology']={key:value for key,value in hydro.items() if key!='pressure_history'}
     result['assumptions'][1]='Pressures come from one OHQ vertical-column run; hydraulic inputs and failure depth are fixed across mechanical realizations.'
     result['assumptions'] += ['Column has 1 m² horizontal area, ponding, and a sealed or unit-gradient base; no runoff, evaporation, or lateral flow. Ponded-water surcharge is omitted from mechanical stresses.',
-                              'Pressure is mapped from OHQ top-reference total heads; spatial convergence must be checked for each new case.',
+                              hydro['pressure_mapping']+' Spatial convergence must be checked for each new case.',
                               'Initial observation values are reconstructed from known model inputs because the pinned engine exports zero placeholders at time zero.']
     return finish(result)

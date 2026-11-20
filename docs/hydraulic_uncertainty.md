@@ -12,6 +12,10 @@ Hydraulic ranges currently support:
 
 Each range specifies `min`, `max`, and `distribution`, with distribution `uniform` or `log_uniform`. A log-uniform draw samples log(parameter) uniformly between log(min) and log(max); it is not a lognormal distribution. Bounds must be valid for the column and contain the nominal input. Fixed ranges are allowed. Mechanical ranges remain independent uniform draws. No parameter correlations or spatial random fields are modelled.
 
+The selected `column.formulation` is fixed across the ensemble. Both the legacy
+and [cell-centred](cell_centred_column.md) modes use the same sampling workflow;
+formulation uncertainty is not automatically mixed into parameter uncertainty.
+
 Geometry, failure depth, rainfall, other hydraulic quantities, and boundary condition remain fixed. The total unit weight is sampled mechanically but held fixed in time for each realization; it is not derived from simulated water content. These limits must be considered when defining a physical joint distribution.
 
 ## Reproducibility and run handling

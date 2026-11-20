@@ -69,6 +69,24 @@ class HTTPTests(unittest.TestCase):
         self.assertLess(result['hydrology']['water_balance_max_residual_m3'],1e-7)
 
     @unittest.skipUnless(ready(), 'Build OHQ before hydraulic HTTP check.')
+    def test_cell_centred_job_and_json_stability_provenance(self):
+        from test_hydrology import column_request
+        from validation.ponding import SPEC
+        request=column_request()
+        request['column']={**SPEC,'formulation':'cell_centred','duration_h':1,'rain_duration_h':1}
+        request['parameters']['failure_depth_m']={'value':.25,'min':.25,'max':.25}
+        request['stability_engine']='ohq_json'
+        code,job=self.request('POST','/api/jobs',request)
+        self.assertEqual(code,202)
+        status=self.wait_for(job['id'])
+        self.assertEqual(status['state'],'completed',status['message'])
+        _,result=self.request('GET',f"/api/jobs/{job['id']}/result")
+        _,provenance=self.request('GET',f"/api/jobs/{job['id']}/provenance")
+        self.assertEqual(result['hydrology']['formulation'],'cell_centred')
+        self.assertTrue(result['stability_diagnostic']['python_reference_checked'])
+        self.assertEqual(result['hydrology']['component_sha256'],provenance['source_sha256']['components/cell_centred_column.json'])
+
+    @unittest.skipUnless(ready(), 'Build OHQ before hydraulic HTTP check.')
     def test_hydraulic_job_runs_distinct_realizations(self):
         from test_coupled import request
         scenario=request();scenario['samples']=2

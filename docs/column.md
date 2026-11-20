@@ -8,6 +8,12 @@ The column has 1 m² horizontal area, uniform material properties, a ponding sur
 
 The demonstration defaults to 2 m depth, 16 blocks, initial water content 0.30, Ksat 0.5 m/day, alpha 1.5/m, n 1.6, residual water content 0.05, saturated water content 0.40, specific storage 0.01/m, and pore connectivity L=0.5. Rain is 40 mm/h for six hours, with a 24-hour simulation. The failure depth is 1 m. These are synthetic values, not experimental case inputs.
 
+This page describes the original `legacy_top` default. An explicitly selectable
+[`cell_centred` formulation](cell_centred_column.md) now uses consistent centre
+spacing, arithmetic conductivity, and an unsmoothed water-limited surface
+boundary. Omitting `column.formulation` preserves the legacy model. Output
+metadata identifies which formulation and pressure convention were used.
+
 ## Build and execute
 
 Build once using Qt6 qmake and the native dependencies described by upstream OHQ:
@@ -66,6 +72,6 @@ FS uses fixed total unit weight per realization, omits suction strength, and cur
 
 ## Next verification work
 
-The independent ponding/saturation comparison now confirms conservation and the analytical late hydrostatic limit, but finds a remaining transient pressure gap of about 0.044 m at 32 cells in its synthetic case. Resolve the representative-head/boundary and interface-conductivity differences, refine spatial resolution and output spacing, then move to the reference experimental case. Add appropriate mechanical treatment of surface loading and an explicit unsaturated strength model if those effects are within the study scope. The reference experimental paper and report remain outside this software repository.
+The independent ponding/saturation comparison now confirms conservation and the analytical late hydrostatic limit, but finds a remaining transient pressure gap of about 0.044 m at 32 cells in its synthetic case. The selectable [cell-centred JSON formulation](cell_centred_column.md) implements the alternative head, boundary, and conductivity equations. Its independent checks still show case-dependent wetting-front error. Resolve spatial/time sensitivity for the intended inputs before moving to the reference experimental case. Add appropriate mechanical treatment of surface loading and an explicit unsaturated strength model if those effects are within the study scope. The reference experimental paper and report remain outside this software repository.
 
 See [independent flow verification](verification.md) for analytical diffusion, nonlinear fixed-flux infiltration, the ponding/saturation comparison, and the original rainfall-grid investigation. The production transient pressure response remains incompletely verified.

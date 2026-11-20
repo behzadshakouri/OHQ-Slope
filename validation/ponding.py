@@ -42,6 +42,9 @@ def retention(pressure, spec):
 def initial_pressure(spec):
     se=(spec['initial_theta']-spec['theta_res'])/(spec['theta_sat']-spec['theta_res'])
     m=1-1/spec['n']
+    if se>=.999:
+        transition=-(.999**(-1/m)-1)**(1/spec['n'])/spec['alpha_per_m']
+        return transition+spec['theta_sat']*(se-.999)/spec['specific_storage_per_m']
     return -(se**(-1/m)-1)**(1/spec['n'])/spec['alpha_per_m']
 
 
@@ -56,7 +59,7 @@ def tridiagonal(lower, diagonal, upper, rhs):
 
 
 def reference(cells=64, step_days=.0005, spec=None, *, head_reference='centre',
-              conductivity='arithmetic', surface_boundary='complementarity'):
+              conductivity='arithmetic', surface_boundary='complementarity',failure_depth_m=FAILURE_DEPTH):
     """Independent finite-volume integration; keyword variants are diagnostic.
 
     Defaults retain the cell-centred physical comparison. The top/maximum/
@@ -70,11 +73,15 @@ def reference(cells=64, step_days=.0005, spec=None, *, head_reference='centre',
         raise ValueError('Unsupported controlled ponding variant.')
     dx=s['depth_m']/cells;half=dx/2
     offset=half if head_reference=='centre' else 0.
+    if not offset<=failure_depth_m<=s['depth_m']-dx+offset:
+        raise ValueError('Reference failure depth lies outside representative heads.')
+    if s['base'] not in ('sealed','unit_gradient'):raise ValueError('Unsupported reference basal boundary.')
     state=[0.]+[initial_pressure(s)]*cells
-    times=[i*s['output_interval_h'] for i in range(round(s['duration_h']/s['output_interval_h'])+1)]
+    times=[i*s['output_interval_h'] for i in range(int(s['duration_h']/s['output_interval_h'])+1)]
+    if abs(times[-1]-s['duration_h'])>1e-8:times.append(s['duration_h'])
     rain_end=s['rain_duration_h']/24
     t=0.;steps=0;max_residual=0.;history=[];profiles=[]
-    max_balance=0.;initial=s['depth_m']*s['initial_theta']
+    max_balance=0.;initial=s['depth_m']*s['initial_theta'];drainage=0.
 
     def top_flux(h,pressure,available):
         capacity=s['ksat_m_day']*(h-pressure+offset)/half
@@ -89,7 +96,7 @@ def reference(cells=64, step_days=.0005, spec=None, *, head_reference='centre',
         # The default is a standard ponded-head/water-availability boundary.
         flux=[top_flux(v[0],v[1],available)]
         flux.extend(interface_k(a,b)*(1-(right-left)/dx) for a,b,left,right in zip(k,k[1:],v[1:],v[2:]))
-        flux.append(0.)
+        flux.append(k[-1] if s['base']=='unit_gradient' else 0.)
         return flux
 
     def advance(previous,dt,rain):
@@ -114,7 +121,7 @@ def reference(cells=64, step_days=.0005, spec=None, *, head_reference='centre',
                 changed_k=retention(v[j]+eps,s)[2] if j else None
                 def changed_value(index):return v[index]+(eps if index==j else 0.)
                 def changed_flux(face):
-                    if face==cells:return 0.
+                    if face==cells:return (changed_k if j==cells else local_k[-1]) if s['base']=='unit_gradient' else 0.
                     if face==0:return top_flux(changed_value(0),changed_value(1),available)
                     left_k=changed_k if face==j else local_k[face-1]
                     right_k=changed_k if face+1==j else local_k[face]
@@ -141,10 +148,10 @@ def reference(cells=64, step_days=.0005, spec=None, *, head_reference='centre',
 
     def record(hours):
         depths=[i*dx+offset for i in range(cells)]
-        pressure=interpolate(list(zip(depths,state[1:])),FAILURE_DEPTH)
-        history.append({'time_h':hours,'head_m':pressure,'surface_depth_m':state[0]})
+        pressure=interpolate(list(zip(depths,state[1:])),failure_depth_m)
+        history.append({'time_h':hours,'head_m':pressure,'surface_depth_m':state[0],'drainage_m3':drainage})
         profiles.append({'time_h':hours,'pressure_head_m':state[1:],
-                         'theta':[retention(p,s)[0] for p in state[1:]]})
+                         'theta':[retention(p,s)[0] for p in state[1:]],'drainage_m3':drainage})
 
     record(0.)
     for hours in times[1:]:
@@ -160,7 +167,8 @@ def reference(cells=64, step_days=.0005, spec=None, *, head_reference='centre',
                 except ValueError:dt/=2
             else:raise ValueError('Ponding reference failed after step reductions.')
             state=new;t+=dt;steps+=1;max_residual=max(max_residual,residual)
-            water=state[0]+dx*math.fsum(retention(p,s)[0] for p in state[1:])
+            if s['base']=='unit_gradient':drainage+=dt*retention(state[-1],s)[2]
+            water=state[0]+dx*math.fsum(retention(p,s)[0] for p in state[1:])+drainage
             expected=initial+s['rainfall_mm_h']/1000*min(t*24,s['rain_duration_h'])
             max_balance=max(max_balance,abs(water-expected))
         record(hours)
@@ -172,6 +180,7 @@ def reference(cells=64, step_days=.0005, spec=None, *, head_reference='centre',
 
 def hydrostatic_surface_depth(spec=SPEC):
     """Exact late sealed-column balance, if the whole column is on the linear branch."""
+    if spec['base']!='sealed':raise ValueError('Hydrostatic balance requires a sealed base.')
     n=spec['n'];m=1-1/n;span=spec['theta_sat']-spec['theta_res']
     transition=-(.999**(-1/m)-1)**(1/n)/spec['alpha_per_m']
     capacity=span*spec['specific_storage_per_m']/spec['theta_sat']
@@ -187,10 +196,12 @@ def differences(case, ref):
     if [p['time_h'] for p in case['pressure_history']] != [p['time_h'] for p in ref['pressure_history']]:
         raise ValueError('Ponding comparison requires identical output times.')
     heads=[abs(a['head_m']-b['head_m']) for a,b in zip(case['pressure_history'],ref['pressure_history'])]
-    surfaces=[p.get('surface_depth_m') for p in case['pressure_history']]
-    if any(p is None for p in surfaces):surfaces=[p['surface_storage_m3'] for p in case['profiles']]
+    def surface_depths(result):
+        values=[p.get('surface_depth_m') for p in result['pressure_history']]
+        return [p['surface_storage_m3'] for p in result['profiles']] if any(p is None for p in values) else values
+    surfaces=surface_depths(case);reference_surfaces=surface_depths(ref)
     return {'maximum_failure_pressure_difference_m':max(heads),'final_failure_pressure_difference_m':heads[-1],
-            'maximum_surface_depth_difference_m':max(abs(a-b['surface_depth_m']) for a,b in zip(surfaces,ref['pressure_history']))}
+            'maximum_surface_depth_difference_m':max(abs(a-b) for a,b in zip(surfaces,reference_surfaces))}
 
 
 def main():

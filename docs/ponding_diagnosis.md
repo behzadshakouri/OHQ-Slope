@@ -70,17 +70,17 @@ and time step gives maximum pressure differences of:
 | 64 | 0.02814 |
 | 128 | 0.01683 |
 
-These 64/128-cell runs use the independent solver only; the production app still
+These 64/128-cell runs use the independent solver only; the legacy formulation still
 allows at most 32 OHQ cells. The gap decreases, but 128 cells still leave roughly
 1.7 cm between formulations. The independent all-alternative reference's
 32-to-64 and 64-to-128 differences are 0.00659 and 0.00345 m. Halving its 128-cell
 time step changes pressure by 0.00122 m. These are empirical differences, not
 rigorous error bounds or evidence of complete transient convergence.
 
-The next numerical step is to implement an explicitly selectable, cell-centred
-column formulation with a consistent surface boundary as project JSON components,
-then verify it against the independent solver over multiple forcing, drainage,
-and moisture regimes. Keep the current formulation identifiable for comparison.
+An explicitly selectable [cell-centred column formulation](cell_centred_column.md)
+now implements the alternative connectors as project JSON components and has been
+checked across forcing, drainage, and moisture regimes. It supports up to 64 OHQ
+cells; existing requests retain the legacy formulation for comparison.
 Do not silently replace one conductivity rule in existing jobs or proceed to
 experimental failure-time inference on the strength of this single benchmark.
 

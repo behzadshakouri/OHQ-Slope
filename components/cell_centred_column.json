@@ -1,0 +1,31 @@
+{
+  "Column Centre Soil Link": {
+    "type": "link",
+    "typecategory": "Connectors",
+    "description": "Cell-centred Darcy exchange with arithmetic adjacent conductivity",
+    "area": {"type": "expression", "expression": "(area.s+area.e)/2", "includeinoutput": "true"},
+    "length": {"type": "expression", "expression": "(depth.s+depth.e)/2", "includeinoutput": "true", "unit": "m"},
+    "K_eff": {
+      "type": "expression",
+      "expression": "(K_sat.s*Se.s^L.s*(1-(1-Se.s^(1/m.s))^m.s)^2+K_sat.e*Se.e^L.e*(1-(1-Se.e^(1/m.e))^m.e)^2)/2",
+      "includeinoutput": "true", "unit": "m/day"
+    },
+    "flow": {
+      "type": "expression",
+      "expression": "((bottom_elevation.s+depth.s/2+pressure_head.s)-(bottom_elevation.e+depth.e/2+pressure_head.e))*K_eff/length*area",
+      "includeinoutput": "true", "applylimit": "true", "unit": "m^3/day"
+    }
+  },
+  "Column Centre Surface Link": {
+    "type": "link",
+    "typecategory": "Connectors",
+    "description": "Ponded-head Darcy boundary; OHQ's nonnegative-storage limiter enforces available water",
+    "area": {"type": "expression", "expression": "_min(area.s;area.e)", "includeinoutput": "true"},
+    "length": {"type": "expression", "expression": "depth.e/2", "includeinoutput": "true", "unit": "m"},
+    "flow": {
+      "type": "expression",
+      "expression": "(head.s-bottom_elevation.e-depth.e/2-pressure_head.e)*K_sat.e/length*area",
+      "includeinoutput": "true", "applylimit": "true", "unit": "m^3/day"
+    }
+  }
+}

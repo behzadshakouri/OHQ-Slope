@@ -44,6 +44,11 @@ function hydraulicChanged() {
   $('samples').max=limited?'100':'10000';if(limited&&Number($('samples').value)>100)$('samples').value='10';
   if($('pressure-source').value==='ohq_column') $('driver-note').textContent=active?'Each realization samples hydraulic and mechanical properties and runs OHQ separately. Transient grid sensitivity remains.':'One OHQ run supplies pressure. Hydraulic inputs and failure depth are fixed; transient grid sensitivity remains.';
 }
+function formulationChanged() {
+  const centred=$('column-formulation').value==='cell_centred';
+  $('column-cells').max=centred?'64':'32';
+  if(!centred&&Number($('column-cells').value)>32)$('column-cells').value='32';
+}
 function advancedInputs() {
   $('column-advanced').replaceChildren();
   for(const [key,label,value,min,max] of advanced) {
@@ -96,9 +101,9 @@ function modeChanged() {
 function reset() {
   inputs();advancedInputs();hydraulicInputs();$('sample-hydraulics').checked=false; $('mode').value = 'deterministic';$('pressure-source').value='ohq_column';$('stability-engine').value='python_reference';
   for(const field of ['value','min','max']) $('failure_depth_m-'+field).value='1';
-  for(const [id,value] of Object.entries({rainfall:'40','rain-duration':'6',duration:'24',ksat:'0.5','initial-theta':'0.3',base:'sealed'})) $(id).value=value;
+  for(const [id,value] of Object.entries({rainfall:'40','rain-duration':'6',duration:'24',ksat:'0.5','initial-theta':'0.3',base:'sealed','column-formulation':'legacy_top'})) $(id).value=value;
   $('pressure').value = '0, 0\n2, 0.15\n4, 0.35\n6, 0.65\n8, 1\n10, 0.75\n12, 0.45';
-  $('samples').value = '2000'; $('seed').value = '42'; driverChanged(); $('form-error').textContent = '';
+  $('samples').value = '2000'; $('seed').value = '42';formulationChanged(); driverChanged(); $('form-error').textContent = '';
 }
 function scenario() {
   const parameters = {};
@@ -110,7 +115,7 @@ function scenario() {
   if(source==='ohq_column') {
     parameters.failure_depth_m.min=parameters.failure_depth_m.max=parameters.failure_depth_m.value;
     const column=Object.fromEntries(advanced.map(([key])=>[key,Number($('column-'+key).value)]));
-    Object.assign(column,{rainfall_mm_h:Number($('rainfall').value),rain_duration_h:Number($('rain-duration').value),duration_h:Number($('duration').value),ksat_m_day:Number($('ksat').value),initial_theta:Number($('initial-theta').value),base:$('base').value});
+    Object.assign(column,{rainfall_mm_h:Number($('rainfall').value),rain_duration_h:Number($('rain-duration').value),duration_h:Number($('duration').value),ksat_m_day:Number($('ksat').value),initial_theta:Number($('initial-theta').value),base:$('base').value,formulation:$('column-formulation').value});
     const request={mode:$('mode').value,pressure_source:source,stability_engine:$('stability-engine').value,parameters,column,samples:Number($('samples').value),seed:Number($('seed').value)};
     if($('mode').value==='ensemble'&&$('sample-hydraulics').checked) request.hydraulic_uncertainty=Object.fromEntries(hydraulicDefinitions.map(([key])=>[key,{min:Number($(`hydraulic-${key}-min`).value),max:Number($(`hydraulic-${key}-max`).value),distribution:$(`hydraulic-${key}-distribution`).value}]));
     return request;
@@ -191,7 +196,7 @@ function showResult(data) {
   chart(data.series);
   $('hydrology-result').hidden=!data.ohq_hydrology_used;
   if(data.ohq_hydrology_used) {
-    $('water-balance').textContent=`Rainfall total: ${(data.hydrology.rainfall_total_m*1000).toFixed(1)} mm. Maximum water-balance residual: ${data.hydrology.water_balance_max_residual_m3.toExponential(2)} m³ over 1 m², across ${data.hydrology.realizations??1} OHQ run(s). Base: ${data.hydrology.specification.base==='sealed'?'sealed':'unit-gradient drainage'}.`;
+    $('water-balance').textContent=`Rainfall total: ${(data.hydrology.rainfall_total_m*1000).toFixed(1)} mm. Maximum water-balance residual: ${data.hydrology.water_balance_max_residual_m3.toExponential(2)} m³ over 1 m², across ${data.hydrology.realizations??1} OHQ run(s). Base: ${data.hydrology.specification.base==='sealed'?'sealed':'unit-gradient drainage'}. Formulation: ${data.hydrology.formulation==='cell_centred'?'cell-centred':'legacy top-reference'}.`;
     pressureChart(data.series);
   }
   $('series').replaceChildren();
@@ -245,6 +250,7 @@ $('scenario').addEventListener('submit',async event=>{
 });
 $('cancel').onclick=async()=>{try{await api(`/api/jobs/${currentJob}`,{method:'DELETE'});}catch(error){$('status').textContent=error.message;}};
 $('sample-hydraulics').onchange=hydraulicChanged;
+$('column-formulation').onchange=formulationChanged;
 $('stability-engine').onchange=driverChanged;
 $('mode').onchange=modeChanged;$('reset').onclick=reset;
 $('pressure-source').onchange=()=>{if($('pressure-source').value==='ohq_column') {for(const field of ['value','min','max']) $('failure_depth_m-'+field).value=$('failure_depth_m-value').value;}driverChanged();};

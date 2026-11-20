@@ -1,0 +1,53 @@
+{
+  "mode": "deterministic",
+  "samples": 1,
+  "seed": 42,
+  "parameters": {
+    "cohesion_kpa": {
+      "value": 5,
+      "min": 3,
+      "max": 7
+    },
+    "friction_deg": {
+      "value": 30,
+      "min": 27,
+      "max": 33
+    },
+    "unit_weight_kn_m3": {
+      "value": 18,
+      "min": 17,
+      "max": 19
+    },
+    "slope_deg": {
+      "value": 30,
+      "min": 28,
+      "max": 32
+    },
+    "failure_depth_m": {
+      "value": 0.25,
+      "min": 0.25,
+      "max": 0.25
+    }
+  },
+  "pressure_source": "ohq_column",
+  "column": {
+    "depth_m": 0.5,
+    "cells": 32,
+    "ksat_m_day": 0.5,
+    "alpha_per_m": 1.5,
+    "n": 1.6,
+    "theta_res": 0.05,
+    "theta_sat": 0.4,
+    "initial_theta": 0.3,
+    "specific_storage_per_m": 0.01,
+    "pore_connectivity": 0.5,
+    "rainfall_mm_h": 40.0,
+    "rain_duration_h": 3.0,
+    "duration_h": 6.0,
+    "output_interval_h": 0.25,
+    "solver_step_h": 0.004166666666666667,
+    "base": "sealed",
+    "formulation": "cell_centred"
+  },
+  "stability_engine": "ohq_json"
+}
