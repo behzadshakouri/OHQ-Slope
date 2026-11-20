@@ -29,10 +29,16 @@ def validate_column(spec, failure_depth):
             if spec.get('rainfall_mm_h',0)!=0 or spec.get('rain_duration_h',0)!=0:
                 raise ValueError('Use a rainfall schedule or a single pulse; omit or zero both pulse fields for a schedule.')
             spec={'rainfall_mm_h':0.,'rain_duration_h':0.,**spec}
-    if not isinstance(spec, dict) or set(spec)-{'rainfall_schedule'} != set(DEFAULT):
+    if not isinstance(spec, dict) or set(spec)-{'rainfall_schedule','surface_boundary'} != set(DEFAULT):
         raise ValueError('Provide the complete supported soil-column specification.')
     for name, value in spec.items():
         if name=='rainfall_schedule':continue
+        if name=='surface_boundary':
+            if value not in ('closed_ponding','reviewed_infiltration'):
+                raise ValueError('Surface boundary must be closed_ponding or reviewed_infiltration.')
+            if value=='reviewed_infiltration' and spec['formulation']!='cell_centred':
+                raise ValueError('Reviewed infiltration requires the cell_centred formulation.')
+            continue
         if name == 'formulation':
             if value not in ('legacy_top','cell_centred'):
                 raise ValueError('Column formulation must be legacy_top or cell_centred.')
@@ -82,7 +88,7 @@ def ready():
 
 
 def render(folder, spec):
-    """One square metre surface, vertical column, no ET or lateral/runoff loss."""
+    """One square metre column; optional reviewed surface excess, no ET/lateral soil flow."""
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
     duration = spec['duration_h']/24
@@ -97,6 +103,8 @@ def render(folder, spec):
              'create block;type=Catchment,name=Surface,area=1,depth=0,elevation=0,Slope=0.01,Width=1,ManningCoeff=0.03,depression_storage=0,Runoff_coeff=1,loss_coefficient=0,Precipitation=Rain']
     centred=spec.get('formulation','legacy_top')=='cell_centred'
     if centred:lines.insert(3,f'addtemplate; filename={ROOT}/components/cell_centred_column.json')
+    reviewed=spec.get('surface_boundary')=='reviewed_infiltration'
+    if reviewed:lines.insert(3,f'addtemplate; filename={ROOT}/components/reviewed_surface.json')
     dz = spec['depth_m']/spec['cells']
     for i in range(spec['cells']):
         fields = {'name': f'Soil{i}', 'area': 1, 'depth': dz, 'bottom_elevation': -(i+1)*dz,
@@ -107,23 +115,30 @@ def render(folder, spec):
         lines.append('create block;type=Soil,' + ','.join(f'{k}={v}' for k,v in fields.items()))
     surface_type='Column Centre Surface Link' if centred else 'surfacewater_to_soil_link'
     soil_type='Column Centre Soil Link' if centred else 'soil_to_soil_link'
+    if reviewed:surface_type='Column Reviewed Rain Link'
     lines.append(f'create link;type={surface_type},from=Surface,to=Soil0,name=Infiltration')
+    if reviewed:
+        lines += ['create block;type=Column Reviewed Excess Collector,name=SurfaceExcess,area=1,Precipitation=Rain',
+                  'create link;type=Column Reviewed Excess Link,from=Soil0,to=SurfaceExcess,name=SurfaceDischarge']
     for i in range(spec['cells']-1):
         lines.append(f'create link;type={soil_type},from=Soil{i},to=Soil{i+1},name=Percolation{i}')
     lines.append('create block;type=Column Drainage Collector,name=Drainage')
     if spec['base'] == 'unit_gradient':
         lines.append(f"create link;type=Column Unit Gradient Drain,from=Soil{spec['cells']-1},to=Drainage,name=BasalDrain")
     observations = [('surface_storage', 'Surface', 'Storage'), ('drainage_storage','Drainage','Storage')]
+    if reviewed:observations.append(('surface_excess','SurfaceExcess','Storage'))
     for i in range(spec['cells']):
         observations += [(f'storage_{i}',f'Soil{i}','Storage'), (f'pressure_{i}',f'Soil{i}','pressure_head'), (f'theta_{i}',f'Soil{i}','theta')]
     for name, obj, quantity in observations:
         lines.append(f'create observation;type=Observation,name={name},object={obj},expression={quantity},observed_data=,error_structure=normal,error_standard_deviation=1')
     settings = {'simulation_start_time':0, 'simulation_end_time':duration,
                 'initial_time_step': spec['solver_step_h']/24, 'max_timestep_increase_factor':1,
-                'minimum_timestep':1e-10, 'nr_tolerance':1e-10 if centred else 1e-8,
+                'minimum_timestep':1e-10, 'nr_tolerance':1e-12 if reviewed else (1e-10 if centred else 1e-8),
                 'maximum_time_allowed':120, 'make_timeseries_uniform':'No',
                 'record_results':'No', 'alloutputfile':'', 'observed_outputfile':'observations.csv',
                 'write_solution_details':'No', 'n_threads':1}
+    if reviewed:
+        settings.update(nr_block_tolerance=1e-10,update_jacobian_every_iteration='Yes')
     for name,value in settings.items():
         lines.append(f'setvalue;object=system,quantity={name},value={value}')
     path = folder/'column.ohq'
@@ -166,6 +181,7 @@ def set_initial_observations(observations,spec):
     # t=0. Supply the independently known initial state rather than plotting
     # that placeholder as a physical state. Subsequent states come from OHQ.
     initial={'surface_storage':0.0, 'drainage_storage':0.0}
+    if spec.get('surface_boundary')=='reviewed_infiltration':initial['surface_excess']=0.0
     for i in range(spec['cells']):
         initial.update({f'storage_{i}':spec['depth_m']/spec['cells']*spec['initial_theta'],
                         f'theta_{i}':spec['initial_theta'], f'pressure_{i}':initial_pressure(spec)})
@@ -273,10 +289,16 @@ def summarize_column(observations,spec,failure_depth):
                          'theta':[interpolate(observations[f'theta_{i}'],t) for i in range(spec['cells'])],
                          'surface_storage_m3':interpolate(observations['surface_storage'],t),
                          'drainage_m3':interpolate(observations['drainage_storage'],t)})
+    if spec.get('surface_boundary')=='reviewed_infiltration':
+        for row in profiles:
+            row['surface_excess_m3']=interpolate(observations['surface_excess'],row['time_h'])
+            # Positive downward net flux; ledger includes both rejected rainfall and exfiltration.
+            row['cumulative_net_infiltration_m3']=cumulative_depth_m(spec,row['time_h'])-row['surface_excess_m3']
     # Check every native output time, including initial and final, not just display samples.
     residuals=[]
     for t,_ in observations['surface_storage']:
         total=interpolate(observations['surface_storage'],t)+interpolate(observations['drainage_storage'],t)
+        if spec.get('surface_boundary')=='reviewed_infiltration':total+=interpolate(observations['surface_excess'],t)
         total+=sum(interpolate(observations[f'storage_{i}'],t) for i in range(spec['cells']))
         expected=spec['depth_m']*spec['initial_theta']+cumulative_depth_m(spec,t)
         residuals.append(total-expected)
@@ -284,6 +306,13 @@ def summarize_column(observations,spec,failure_depth):
     minimum_surface=min(value for _,value in observations['surface_storage'])
     if spec['formulation']=='cell_centred' and minimum_surface < -1e-10:
         raise ValueError('Cell-centred surface storage became negative; the ponding complementarity check failed.')
+    if spec.get('surface_boundary')=='reviewed_infiltration':
+        if max(abs(v) for _,v in observations['surface_storage'])>1e-10:
+            raise ValueError('Reviewed surface accumulated water; zero-storage boundary failed.')
+        if min(v for _,v in observations['surface_excess']) < -1e-10:
+            raise ValueError('Surface excess ledger became negative.')
+        if any(b[1]<a[1]-1e-10 for a,b in zip(observations['surface_excess'],observations['surface_excess'][1:])):
+            raise ValueError('Surface excess ledger decreased.')
     # One square metre area: tolerance is also water-depth equivalent.
     if residual > 1e-4:
         raise ValueError(f'Column water balance failed: maximum residual {residual:.3g} m³ exceeds 1e-4 m³.')
@@ -295,6 +324,9 @@ def summarize_column(observations,spec,failure_depth):
             'rainfall_convention':'Piecewise constant intensity over horizontal area; [start,end), zero in gaps; native interval total depths in metres.',
             'failure_depth_m':failure_depth,
             'formulation':spec['formulation'],
+            'surface_boundary':spec.get('surface_boundary','closed_ponding'),
+            'boundary_component_sha256':hashlib.sha256((ROOT/'components/column_boundaries.json').read_bytes()).hexdigest(),
+            'reviewed_surface_component_sha256':hashlib.sha256((ROOT/'components/reviewed_surface.json').read_bytes()).hexdigest() if spec.get('surface_boundary')=='reviewed_infiltration' else None,
             'pressure_mapping':('Linear total-head interpolation at cell-centre elevations; pressure = total head minus failure-plane elevation.' if spec['formulation']=='cell_centred' else
                                'Linear total-head interpolation using OHQ soil top-elevation references; pressure = total head minus failure-plane elevation.'),
             'component_sha256':hashlib.sha256((ROOT/'components/cell_centred_column.json').read_bytes()).hexdigest() if spec['formulation']=='cell_centred' else None,

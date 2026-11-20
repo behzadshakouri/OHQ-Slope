@@ -69,3 +69,9 @@ infiltration/seepage boundary need distinct accounting. Final-time agreement
 between grids does not establish convergence of an earlier sharp wetting front.
 The diagnostic never marks a study experimentally validated or assigns universal
 acceptance thresholds.
+
+For a zero-storage rainfall/excess-water control, see
+[reviewed surface equations and verification](reviewed_surface.md). It uses the
+same external study schema with `column.surface_boundary` set to
+`reviewed_infiltration`, requires cell-centred heads and remains hydrology-only.
+All boundary component hashes are now recorded alongside source identities.

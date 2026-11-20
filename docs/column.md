@@ -75,3 +75,11 @@ FS uses fixed total unit weight per realization, omits suction strength, and cur
 The independent ponding/saturation comparison now confirms conservation and the analytical late hydrostatic limit, but finds a remaining transient pressure gap of about 0.044 m at 32 cells in its synthetic case. The selectable [cell-centred JSON formulation](cell_centred_column.md) implements the alternative head, boundary, and conductivity equations. Its independent checks still show case-dependent wetting-front error. Resolve spatial/time sensitivity for the intended inputs before moving to the reference experimental case. Add appropriate mechanical treatment of surface loading and an explicit unsaturated strength model if those effects are within the study scope. The reference experimental paper and report remain outside this software repository.
 
 See [independent flow verification](verification.md) for analytical diffusion, nonlinear fixed-flux infiltration, the ponding/saturation comparison, and the original rainfall-grid investigation. The production transient pressure response remains incompletely verified.
+
+## Offline reviewed-surface control
+
+The surface description above applies to the default `closed_ponding` boundary.
+The optional [reviewed infiltration JSON component](reviewed_surface.md) provides
+a zero-storage rainfall/excess-discharge alternative for offline hydrology-only
+sensitivity studies. It requires cell-centred heads and remains excluded from
+the FS workflow while its hydrologic representation is assessed.

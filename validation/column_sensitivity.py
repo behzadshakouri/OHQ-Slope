@@ -74,7 +74,8 @@ def main():
     result={'state':'running','field_validated':False,'fs_computed':False,'trials':[],
             'input_sha256':hashlib.sha256(args.study.read_bytes()).hexdigest(),
             'source_sha256':{name:hashlib.sha256((ROOT/name).read_bytes()).hexdigest() for name in
-                ('validation/column_sensitivity.py','hydrology/column.py','hydrology/rainfall.py')},
+                ('validation/column_sensitivity.py','hydrology/column.py','hydrology/rainfall.py',
+                 'components/column_boundaries.json','components/cell_centred_column.json','components/reviewed_surface.json')},
             'engine_binary_sha256':hashlib.sha256(BINARY.read_bytes()).hexdigest(),
             'engine_dependency':json.loads((ROOT/'config/engine.json').read_text())}
     def save():args.output.write_text(json.dumps(result,indent=2)+'\n')

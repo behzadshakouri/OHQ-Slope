@@ -69,7 +69,7 @@ def reference(cells=64, step_days=.0005, spec=None, *, head_reference='centre',
     s=dict(SPEC if spec is None else spec)
     if not isinstance(cells,int) or isinstance(cells,bool) or cells<2 or not math.isfinite(step_days) or step_days<=0:
         raise ValueError('Use at least two cells and a finite positive step.')
-    if head_reference not in ('centre','top') or conductivity not in ('arithmetic','maximum') or surface_boundary not in ('complementarity','smoothed'):
+    if head_reference not in ('centre','top') or conductivity not in ('arithmetic','maximum') or surface_boundary not in ('complementarity','smoothed','reviewed_infiltration'):
         raise ValueError('Unsupported controlled ponding variant.')
     dx=s['depth_m']/cells;half=dx/2
     offset=half if head_reference=='centre' else 0.
@@ -87,10 +87,10 @@ def reference(cells=64, step_days=.0005, spec=None, *, head_reference='centre',
     def rainfall_depth(hours):
         return math.fsum(row['intensity_mm_h']/1000*max(0.,min(hours,row['end_h'])-row['start_h']) for row in wet)
     t=0.;steps=0;max_residual=0.;history=[];profiles=[]
-    max_balance=0.;initial=s['depth_m']*s['initial_theta'];drainage=0.
+    max_balance=0.;initial=s['depth_m']*s['initial_theta'];drainage=0.;excess=0.
 
     def top_flux(h,pressure,available):
-        capacity=s['ksat_m_day']*(h-pressure+offset)/half
+        capacity=s['ksat_m_day']*((0. if surface_boundary=='reviewed_infiltration' else h)-pressure+offset)/half
         if surface_boundary=='smoothed':return capacity*max(0.,h)/(max(0.,h)+.001)
         return min(available,capacity)
 
@@ -111,7 +111,7 @@ def reference(cells=64, step_days=.0005, spec=None, *, head_reference='centre',
 
         def residual(v):
             q=fluxes(v,available)
-            return [v[0]-old[0]-dt*(rain-q[0])]+[dx*retention(p,s)[0]-a-dt*(qin-qout) for p,a,qin,qout in zip(v[1:],old[1:],q,q[1:])]
+            return ([v[0]] if surface_boundary=='reviewed_infiltration' else [v[0]-old[0]-dt*(rain-q[0])])+[dx*retention(p,s)[0]-a-dt*(qin-qout) for p,a,qin,qout in zip(v[1:],old[1:],q,q[1:])]
 
         v=list(previous)
         for iteration in range(30):
@@ -134,7 +134,7 @@ def reference(cells=64, step_days=.0005, spec=None, *, head_reference='centre',
                     return interface_k(left_k,right_k)*(1-(changed_value(face+1)-changed_value(face))/dx)
                 changed={face:(changed_flux(face)-q[face])/eps for face in {max(0,j-1),j}}
                 for i in range(max(0,j-1),min(size,j+2)):
-                    if i==0:derivative=(1. if j==0 else 0.)+dt*changed.get(0,0.)
+                    if i==0:derivative=(1. if j==0 else 0.)+(0. if surface_boundary=='reviewed_infiltration' else dt*changed.get(0,0.))
                     else:
                         derivative=(dx*retention(v[i],s)[1] if i==j else 0.)-dt*(changed.get(i-1,0.)-changed.get(i,0.))
                     if i==j:diagonal[i]=derivative
@@ -160,6 +160,8 @@ def reference(cells=64, step_days=.0005, spec=None, *, head_reference='centre',
                          'theta':[retention(p,s)[0] for p in state[1:]],'drainage_m3':drainage})
 
     record(0.)
+    if surface_boundary=='reviewed_infiltration':
+        profiles[-1]['surface_excess_m3']=0.
     for hours in times[1:]:
         target=hours/24
         while t<target-1e-13:
@@ -176,11 +178,13 @@ def reference(cells=64, step_days=.0005, spec=None, *, head_reference='centre',
                 except ValueError:dt/=2
             else:raise ValueError('Ponding reference failed after step reductions.')
             state=new;t+=dt;steps+=1;max_residual=max(max_residual,residual)
+            if surface_boundary=='reviewed_infiltration':excess+=dt*(rain-fluxes(state,rain)[0])
             if s['base']=='unit_gradient':drainage+=dt*retention(state[-1],s)[2]
-            water=state[0]+dx*math.fsum(retention(p,s)[0] for p in state[1:])+drainage
+            water=state[0]+dx*math.fsum(retention(p,s)[0] for p in state[1:])+drainage+excess
             expected=initial+rainfall_depth(t*24)
             max_balance=max(max_balance,abs(water-expected))
         record(hours)
+        if surface_boundary=='reviewed_infiltration':profiles[-1]['surface_excess_m3']=excess
     return {'cells':cells,'step_days':step_days,'steps':steps,'pressure_history':history,
             'reference_depths_m':[i*dx+offset for i in range(cells)],'profiles':profiles,
             'variant':{'head_reference':head_reference,'conductivity':conductivity,'surface_boundary':surface_boundary},

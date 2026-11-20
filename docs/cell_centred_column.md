@@ -251,3 +251,11 @@ validity is not independently established by this comparison. FS still omits
 ponded-water mechanical surcharge and suction strength, and no experimental
 parameters or joint probability distributions are inferred by selecting this
 formulation.
+
+## Offline reviewed-surface control
+
+The surface description above applies to the default `closed_ponding` boundary.
+The optional [reviewed infiltration JSON component](reviewed_surface.md) provides
+a zero-storage rainfall/excess-discharge alternative for offline hydrology-only
+sensitivity studies. It requires cell-centred heads and remains excluded from
+the FS workflow while its hydrologic representation is assessed.

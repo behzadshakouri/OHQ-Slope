@@ -1,0 +1,33 @@
+{
+  "Column Reviewed Rain Link": {
+    "type": "link",
+    "typecategory": "Connectors",
+    "description": "Deliver rainfall to top cell; paired excess link gives net reviewed infiltration",
+    "flow": {
+      "type": "expression", "expression": "Precipitation_runoff.s",
+      "includeinoutput": "true", "applylimit": "false", "unit": "m^3/day"
+    }
+  },
+  "Column Reviewed Excess Collector": {
+    "type": "block", "typecategory": "Blocks",
+    "description": "Cumulative excess rainfall plus exfiltration, not a hydraulic reservoir",
+    "Storage": {
+      "type": "balance", "massbalance": "true", "flow": "flow",
+      "initial_value_expression": "0", "includeinoutput": "true", "unit": "m^3"
+    },
+    "Precipitation": {"type": "source", "includeinoutput": "false"},
+    "area": {"type": "value", "default": "1", "unit": "m^2"}
+  },
+  "Column Reviewed Excess Link": {
+    "type": "link", "typecategory": "Connectors",
+    "description": "R minus min(R,zero-pressure Darcy capacity); allows rainfall rejection and soil exfiltration",
+    "zero_head_capacity": {
+      "type": "expression", "expression": "(depth.s/2-pressure_head.s)*K_sat.s/(depth.s/2)*area.s",
+      "unit": "m^3/day", "includeinoutput": "true"
+    },
+    "flow": {
+      "type": "expression", "expression": "_max(0;Precipitation.e-zero_head_capacity)",
+      "includeinoutput": "true", "applylimit": "false", "unit": "m^3/day"
+    }
+  }
+}

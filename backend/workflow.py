@@ -31,6 +31,8 @@ def validate_request(request):
     if mechanical['mode']=='ensemble' and not depth['min']==depth['value']==depth['max']:
         raise ValueError('Column mode holds failure depth fixed. Set its min and max equal to its value.')
     column=validate_column(request.get('column'),depth['value'])
+    if column.get('surface_boundary')=='reviewed_infiltration':
+        raise ValueError('Reviewed infiltration is currently available only in offline hydrology diagnostics; assess it before FS coupling.')
     rows=int(column['duration_h']/column['output_interval_h'])+2
     if rows*mechanical['samples']>1000000:
         raise ValueError('Reduce samples or output times to one million mechanical evaluations.')

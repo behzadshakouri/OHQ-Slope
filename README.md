@@ -163,3 +163,5 @@ The repository About description and topic tags are tracked in
 a separate authenticated update; see [repository metadata](docs/repository_metadata.md).
 The Checks workflow runs after pushing and explicitly skips native OHQ checks
 when its console has not been built. A passing CI badge is not field validation.
+
+Offline hydrology studies also support an optional [reviewed infiltration surface](docs/reviewed_surface.md), with explicit excess-water accounting and independent boundary checks. This diagnostic option is not exposed in the browser or enabled for FS coupling.
