@@ -143,11 +143,64 @@ but neither calculation establishes a converged dry wetting front.
 python3 -m validation.cell_centred --case initially_drier --cells 64 --reference-cells 256 --output results/cell-centred-dry-refinement.json
 ```
 
-A dry-case 128-cell native trial returned exit code 5 with `Solve() failed`
-before producing observations. The adapter therefore caps this formulation at
-64 cells. This trial does not identify whether engine time allowance, nonlinear
-convergence, or another solver limitation caused that failure; it is not a
-successful refinement result.
+### Offline runtime diagnosis
+
+The earlier 128-cell dry-case failure has now been reproduced with the native
+solution logger enabled. The log explicitly reports `Simulation time exceeded
+the limit of 120 seconds`; it stopped at t=0.065431264 days (about 1.57 h), before
+the requested 0.25 days. The solver cost profile records about 110 seconds in
+residual evaluation. Exit code 5 alone did not identify this cause.
+
+`validation.runtime_diagnosis` provides a bounded offline diagnostic with a
+separate engine allowance and a process guard five seconds longer. It enables
+`solution_details.txt`, saves explicit failed/completed trial status, and uses
+the same pressure mapping and conservation checks as normal runs. It allows
+64/128 cells only in this diagnostic; web/API inputs remain capped at 64 cells
+with their existing 120/125-second engine/process limits. No engine source or
+pin is changed.
+
+```sh
+python3 -m validation.runtime_diagnosis --engine-seconds 120 --output results/runtime-128-limited.json
+python3 -m validation.runtime_diagnosis --engine-seconds 600 --compare --output results/runtime-128-extended.json
+python3 -m validation.runtime_diagnosis --engine-seconds 600 --half-step --compare --output results/runtime-128-half-step.json
+```
+
+The optional comparison calculates independent matched-grid and 256-cell
+references plus reference grid/time sensitivity. Generated logs and reports stay
+under ignored `results/`. Research progress and the study checkpoint stay in
+Dropbox. A successful longer run alone would not establish spatial convergence
+or justify expanding the app's grid cap.
+
+### Completed 128-cell dry-case checks
+
+With a 600-second offline engine allowance, the 1/240-hour maximum-step run
+completed in about 300 seconds including process setup and postprocessing. The
+1/480-hour run completed in about 387 seconds. Both covered the full six hours;
+minimum surface storage was zero, and maximum water-balance residuals were
+2.38e-10 and 3.61e-11 m³ respectively. Runtime depends on the machine and load.
+
+At the 0.25 m failure depth, the 128-cell maximum pressure difference from the
+256-cell independent reference is 0.01413 m, compared with 0.05278 m for 64 OHQ
+cells against that same reference. The independent 128/256-cell difference is
+0.01455 m and its 256-cell time-step difference is 0.00478 m. These are still
+numerical references with unresolved error.
+
+The 128-cell same-grid failure-pressure difference is 0.00125 m, but the full
+profile difference reaches 0.02246 m at t=0.75 h and depth 0.177734375 m
+(OHQ -2.17042 m, reference -2.14795 m). Halving OHQ's maximum step changes the
+failure-plane pressure by 0.00407 m and the complete profiles by up to 0.02350 m.
+All maxima here are over saved times, not a bound on unsampled states. This
+supports improved grid agreement at the selected depth while leaving wetting-front
+time sensitivity unresolved; it does not validate failure timing or the entire
+pressure field.
+
+At the smaller step, same-grid OHQ/reference disagreement falls to 0.000310 m
+at the failure plane and 0.000476 m over the full profiles. Halving the independent
+128-cell step also changes its profiles by 0.02351 m, closely matching OHQ's
+0.02350 m change. This points to temporal resolution of the sharp front as a
+remaining numerical issue, rather than establishing a discrepancy in the chosen
+constitutive laws. Next checks should reduce the time step again and assess
+reference spatial sensitivity at consistent steps before quantitative inference.
 
 ## Remaining limits
 

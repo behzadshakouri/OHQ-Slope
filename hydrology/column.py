@@ -200,8 +200,10 @@ def map_pressure(heads, depths, target):
     return heads[-1]
 
 
-def run_engine(folder, model, cancelled=lambda:False):
+def run_engine(folder, model, cancelled=lambda:False, *, wall_time_limit_s=125):
     """Run a generated local model using the pinned console and its raw export."""
+    if not isinstance(wall_time_limit_s,(int,float)) or isinstance(wall_time_limit_s,bool) or not math.isfinite(wall_time_limit_s) or not 0 < wall_time_limit_s <= 905:
+        raise ValueError('Native process wall-time limit must be positive and at most 905 seconds.')
     if not ready():
         raise ValueError('OHQ console is not built. Run python3 scripts/build_ohq.py --qmake /path/to/qmake.')
     build=json.loads((BINARY.parent/'build.json').read_text())
@@ -223,7 +225,7 @@ def run_engine(folder, model, cancelled=lambda:False):
         started=time.monotonic()
         try:
             while process.poll() is None:
-                if cancelled() or time.monotonic()-started > 125:
+                if cancelled() or time.monotonic()-started > wall_time_limit_s:
                     process.terminate()
                     try:process.wait(timeout=3)
                     except subprocess.TimeoutExpired:process.kill();process.wait()
@@ -248,6 +250,11 @@ def simulate(folder, spec, failure_depth, cancelled=lambda:False):
     folder=Path(folder).resolve()
     model=render(folder,spec)
     observations=run_engine(folder,model,cancelled)
+    return summarize_column(observations,spec,failure_depth)
+
+
+def summarize_column(observations,spec,failure_depth):
+    """Map native observations and check conservation; also used by offline diagnostics."""
     set_initial_observations(observations,spec)
     duration=spec['duration_h']
     times=[i*spec['output_interval_h'] for i in range(int(duration/spec['output_interval_h'])+1)]
