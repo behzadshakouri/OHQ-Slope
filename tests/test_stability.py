@@ -23,6 +23,28 @@ class StabilityTests(unittest.TestCase):
         # cohesion=2 kPa, tan(phi)=1 -> resistance=12.19 kPa.
         self.assertAlmostEqual(factor_of_safety(2, 45, 20, 45, 2, 1), 12.19/20)
 
+    def test_saturated_parallel_seepage_limit(self):
+        # Pressure for saturated seepage parallel to the slope, expressed at
+        # vertical depth z. USACE EM 1110-2-1902, equation C-29.
+        for beta in (15, 30, 45):
+            for depth in (0.5, 2):
+                with self.subTest(beta=beta, depth=depth):
+                    psi = depth * math.cos(math.radians(beta))**2
+                    expected = (20-9.81)/20 * math.tan(math.radians(35))/math.tan(math.radians(beta))
+                    self.assertAlmostEqual(factor_of_safety(0, 35, 20, beta, depth, psi), expected)
+
+    def test_normal_thickness_and_vertical_depth_force_balance(self):
+        # Per unit failure-plane area: weight=gamma*normal thickness.
+        # Resolve that weight directly, independently of the vertical-depth formula.
+        for beta in (15, 30, 45, 60):
+            with self.subTest(beta=beta):
+                angle = math.radians(beta)
+                weight = 20 * 0.5
+                normal = weight * math.cos(angle)
+                driving = weight * math.sin(angle)
+                expected = (2 + (normal-9.81*0.2)*math.tan(math.radians(35)))/driving
+                self.assertAlmostEqual(factor_of_safety(2, 35, 20, beta, 0.5/math.cos(angle), 0.2), expected)
+
     def test_pressure_reduces_fs_and_suction_is_omitted(self):
         dry = factor_of_safety(3, 30, 18, 30, 2, 0)
         self.assertEqual(dry, factor_of_safety(3, 30, 18, 30, 2, -10))

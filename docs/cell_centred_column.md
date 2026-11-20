@@ -202,6 +202,45 @@ remaining numerical issue, rather than establishing a discrepancy in the chosen
 constitutive laws. Next checks should reduce the time step again and assess
 reference spatial sensitivity at consistent steps before quantitative inference.
 
+### Third time level at 128 cells
+
+A further maximum step of 1/960 h (3.75 seconds) completed the six-hour dry case
+in about 650 seconds with a 900-second offline allowance. The diagnostic accepts
+`--step-divisions 240`, `480`, `960`, or `1920`; `--half-step` remains an alias
+for 480. Finer steps are confined to this bounded diagnostic, with a minimum
+1/1920 h and at most 50,000 nominal steps. The app limits remain unchanged.
+
+| Maximum step | Native water residual (m³) | Matched-grid failure-head difference (m) | Matched-grid full-profile difference (m) |
+|---|---:|---:|---:|
+| 1/240 h | 2.38e-10 | 0.0012524 | 0.0224639 |
+| 1/480 h | 3.60e-11 | 0.0003097 | 0.0004759 |
+| 1/960 h | 3.48e-11 | 0.0000708 | 0.0007068 |
+
+All surface minima were zero. Successive native time refinements change
+failure-plane heads by 0.004071 and 0.002302 m, and full profiles by 0.023498
+and 0.012380 m. The respective difference ratios are 1.77 and 1.90 (descriptive
+empirical orders 0.82 and 0.92). Independent 128-cell profile changes are
+0.023509 and 0.012210 m. Full-profile implementation differences are **not**
+monotonic, although the finest same-grid difference remains below 0.000707 m.
+
+At the finest matching step, OHQ 128 versus independent 256 cells differs by
+0.014960 m at the failure plane; independent 128 versus 256 cells differs by
+0.015031 m. Halving the independent 256-cell step changes that pressure by
+0.001215 m. Spatial sensitivity therefore remains material. These maxima use
+saved 0.25-hour outputs; neither empirical order nor implementation agreement
+provides a rigorous error bound, experimental validation, or accepted failure time.
+
+```sh
+python3 -m validation.runtime_diagnosis --engine-seconds 900 --step-divisions 960 --compare --output results/runtime-128-quarter-step.json
+python3 -m validation.time_refinement results/runtime-128-extended.json results/runtime-128-half-step.json results/runtime-128-quarter-step.json --output results/time-refinement-128.json
+```
+
+The comparison utility requires completed runs with identical physical inputs,
+engine/component identities, failure-depth mapping, and successively halved
+maximum steps. It matches embedded references by their actual grid and step,
+records input/source hashes, and writes explicit failure status on invalid input.
+It reports descriptive differences without assigning an acceptance threshold.
+
 ## Remaining limits
 
 Implementation agreement and conservation do not establish continuum accuracy,

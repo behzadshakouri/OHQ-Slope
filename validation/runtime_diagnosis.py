@@ -23,7 +23,11 @@ def trial(folder, spec, engine_seconds):
     """Bypass only the app cell cap for a controlled offline model."""
     if type(engine_seconds) is not int or not 1<=engine_seconds<=900:
         raise ValueError('Use 1 to 900 seconds for the offline engine limit.')
-    validate_column({**spec,'cells':64},FAILURE_DEPTH)
+    step=spec['solver_step_h']
+    if not isinstance(step,(int,float)) or not 1/1920<=step<=.1 or spec['duration_h']/step>50000:
+        raise ValueError('Offline maximum step must be between 1/1920 and 0.1 h, with at most 50000 nominal steps.')
+    # Check normal inputs, allowing only the diagnostic grid and smaller-step exceptions.
+    validate_column({**spec,'cells':64,'solver_step_h':max(step,1/600)},FAILURE_DEPTH)
     if spec['cells'] not in (64,128):raise ValueError('Diagnostic supports 64 or 128 cells.')
     folder=Path(folder).resolve();folder.mkdir(parents=True,exist_ok=True)
     # A new run must not inherit a previous run's termination diagnosis.
@@ -55,12 +59,28 @@ def main():
     parser.add_argument('--output',type=Path,default=Path('results/runtime-diagnosis.json'))
     parser.add_argument('--engine-seconds',type=int,default=600)
     parser.add_argument('--cells',type=int,choices=(64,128),default=128)
-    parser.add_argument('--half-step',action='store_true')
+    steps=parser.add_mutually_exclusive_group()
+    steps.add_argument('--half-step',action='store_true',help='Compatibility shorthand for --step-divisions 480.')
+    steps.add_argument('--step-divisions',type=int,choices=(240,480,960,1920),
+                       help='Maximum time step is 1/N hours; defaults to 240.')
     parser.add_argument('--compare',action='store_true',help='Also compute independent 128/256-cell and temporal references.')
     args=parser.parse_args()
     if not 1<=args.engine_seconds<=900:parser.error('Use 1 to 900 seconds for the offline engine limit.')
+    try:
+        result=diagnose(args)
+    except (ValueError,OSError,KeyboardInterrupt) as error:
+        result=json.loads(args.output.read_text()) if args.output.exists() else {}
+        result.update(state='interrupted' if isinstance(error,KeyboardInterrupt) else 'failed',
+                      message=str(error) or 'Interrupted by user.',field_validated=False)
+        args.output.parent.mkdir(parents=True,exist_ok=True)
+        args.output.write_text(json.dumps(result,indent=2)+'\n')
+        parser.exit(1,result['message']+'\n')
+    if result['trial']['state']!='completed':raise SystemExit(1)
+
+
+def diagnose(args):
     spec={**SPEC,'cells':args.cells,'formulation':'cell_centred','initial_theta':.2,
-          'solver_step_h':1/(480 if args.half_step else 240)}
+          'solver_step_h':1/(480 if args.half_step else (args.step_divisions or 240))}
     folder=args.output.parent/(args.output.stem+'_files')
     args.output.parent.mkdir(parents=True,exist_ok=True)
     args.output.write_text(json.dumps({'state':'running','specification':spec,'field_validated':False},indent=2)+'\n')
@@ -96,7 +116,7 @@ def main():
     result['state']=result['trial']['state']
     args.output.write_text(json.dumps(result,indent=2)+'\n')
     print('Saved '+str(args.output),flush=True)
-    if result['trial']['state']!='completed':raise SystemExit(1)
+    return result
 
 
 if __name__=='__main__':main()
