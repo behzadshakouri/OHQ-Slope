@@ -9,7 +9,7 @@ import subprocess
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
-ENGINE = ROOT / 'external/OpenHydroQual'
+ENGINE = ROOT / 'OpenHydroQual'
 BINARY = ROOT / 'build/ohq-console/OpenHydroQual-Console'
 DEFAULT = {
     'depth_m': 2.0, 'cells': 16, 'ksat_m_day': 0.5,

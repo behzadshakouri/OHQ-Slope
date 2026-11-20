@@ -131,7 +131,7 @@ Qt6, a C++17 compiler, make, Armadillo, LAPACK/BLAS, GSL, and SuperLU are requir
 | `validation/` | Analytical diffusion, nonlinear infiltration, ponding/saturation, and rainfall refinement diagnostics |
 | `components/` | Column boundaries and read-only infinite-slope JSON diagnostic |
 | `config/` | Engine provenance |
-| `external/OpenHydroQual/` | Pinned engine submodule |
+| `OpenHydroQual/` | Pinned engine submodule |
 | `results/` | Ignored generated outputs |
 
 ## Next development stages

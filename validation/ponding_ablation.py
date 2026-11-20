@@ -79,7 +79,7 @@ def main():
     args=parser.parse_args()
     result=diagnose(args.output.parent/(args.output.stem+'_files'))
     result['source_sha256']={name:hashlib.sha256((ROOT/name).read_bytes()).hexdigest() for name in
-        ('validation/ponding.py','validation/ponding_ablation.py','hydrology/column.py','external/OpenHydroQual/resources/unsaturated_soil.json')}
+        ('validation/ponding.py','validation/ponding_ablation.py','hydrology/column.py','OpenHydroQual/resources/unsaturated_soil.json')}
     result['engine_dependency']=json.loads((ROOT/'config/engine.json').read_text())
     args.output.parent.mkdir(parents=True,exist_ok=True)
     args.output.write_text(json.dumps(result,indent=2)+'\n')

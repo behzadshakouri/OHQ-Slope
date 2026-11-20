@@ -19,7 +19,7 @@ def main():
     if not 1<=args.jobs<=8:parser.error('Choose 1 to 8 compiler jobs.')
     build=ROOT/'build/ohq-console';build.mkdir(parents=True,exist_ok=True)
     subprocess.run([sys.executable,str(ROOT/'scripts/check_dependency.py')],check=True)
-    project=ROOT/'external/OpenHydroQual/terminal/TOpenHydroQual/TOpenHydroQual.pro'
+    project=ROOT/'OpenHydroQual/terminal/TOpenHydroQual/TOpenHydroQual.pro'
     qt_version=subprocess.check_output([args.qmake,'-query','QT_VERSION'],text=True).strip()
     if not qt_version.startswith('6.'):parser.error('This build requires Qt6 qmake.')
     commands=[[args.qmake,str(project),'CONFIG+=release'],['make',f'-j{args.jobs}']]
