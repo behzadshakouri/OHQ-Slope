@@ -68,6 +68,24 @@ class HTTPTests(unittest.TestCase):
         self.assertTrue(result['ohq_hydrology_used'])
         self.assertLess(result['hydrology']['water_balance_max_residual_m3'],1e-7)
 
+    @unittest.skipUnless(ready(), 'Build OHQ before scheduled rainfall HTTP check.')
+    def test_scheduled_rainfall_request_and_provenance(self):
+        from hydrology.column import ROOT
+        request=json.loads((ROOT/'models/repeated_rainfall_example.json').read_text())
+        code,job=self.request('POST','/api/jobs',request)
+        self.assertEqual(code,202)
+        status=self.wait_for(job['id'])
+        self.assertEqual(status['state'],'completed',status['message'])
+        _,stored=self.request('GET',f"/api/jobs/{job['id']}/request")
+        _,result=self.request('GET',f"/api/jobs/{job['id']}/result")
+        _,provenance=self.request('GET',f"/api/jobs/{job['id']}/provenance")
+        self.assertEqual(stored['column']['rainfall_schedule'],request['column']['rainfall_schedule'])
+        self.assertEqual(stored['column']['rainfall_mm_h'],0)
+        self.assertAlmostEqual(result['hydrology']['rainfall_total_m'],.04869)
+        self.assertIn('hydrology/rainfall.py',provenance['source_sha256'])
+        request['column']['rainfall_schedule'][1]['start_h']=0
+        self.assertEqual(self.request('POST','/api/jobs',request)[0],400)
+
     @unittest.skipUnless(ready(), 'Build OHQ before hydraulic HTTP check.')
     def test_cell_centred_job_and_json_stability_provenance(self):
         from test_hydrology import column_request

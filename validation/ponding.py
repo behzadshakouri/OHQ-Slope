@@ -79,7 +79,13 @@ def reference(cells=64, step_days=.0005, spec=None, *, head_reference='centre',
     state=[0.]+[initial_pressure(s)]*cells
     times=[i*s['output_interval_h'] for i in range(int(s['duration_h']/s['output_interval_h'])+1)]
     if abs(times[-1]-s['duration_h'])>1e-8:times.append(s['duration_h'])
-    rain_end=s['rain_duration_h']/24
+    # Independently construct forcing events; do not reuse production cumulative rain.
+    wet=s.get('rainfall_schedule')
+    if wet is None:
+        wet=[{'start_h':0.,'end_h':s['rain_duration_h'],'intensity_mm_h':s['rainfall_mm_h']}]
+    rain_events=sorted({v/24 for row in wet for v in (row['start_h'],row['end_h'])})
+    def rainfall_depth(hours):
+        return math.fsum(row['intensity_mm_h']/1000*max(0.,min(hours,row['end_h'])-row['start_h']) for row in wet)
     t=0.;steps=0;max_residual=0.;history=[];profiles=[]
     max_balance=0.;initial=s['depth_m']*s['initial_theta'];drainage=0.
 
@@ -158,8 +164,11 @@ def reference(cells=64, step_days=.0005, spec=None, *, head_reference='centre',
         target=hours/24
         while t<target-1e-13:
             dt=min(step_days,target-t)
-            if t<rain_end-1e-13:dt=min(dt,rain_end-t)
-            rain=s['rainfall_mm_h']*24/1000 if t<rain_end-1e-13 else 0.
+            upcoming=next((event for event in rain_events if event>t+1e-13),None)
+            if upcoming is not None:dt=min(dt,upcoming-t)
+            # Use an interior point to avoid left/right ambiguity at a switch.
+            middle=(t+dt/2)*24
+            rain=sum(row['intensity_mm_h']*24/1000 for row in wet if row['start_h']<=middle<row['end_h'])
             # Retry with a smaller step if the nonlinear solve fails; no
             # physical state clipping, redrawing, or silently skipped steps.
             for _ in range(14):
@@ -169,7 +178,7 @@ def reference(cells=64, step_days=.0005, spec=None, *, head_reference='centre',
             state=new;t+=dt;steps+=1;max_residual=max(max_residual,residual)
             if s['base']=='unit_gradient':drainage+=dt*retention(state[-1],s)[2]
             water=state[0]+dx*math.fsum(retention(p,s)[0] for p in state[1:])+drainage
-            expected=initial+s['rainfall_mm_h']/1000*min(t*24,s['rain_duration_h'])
+            expected=initial+rainfall_depth(t*24)
             max_balance=max(max_balance,abs(water-expected))
         record(hours)
     return {'cells':cells,'step_days':step_days,'steps':steps,'pressure_history':history,
@@ -186,7 +195,10 @@ def hydrostatic_surface_depth(spec=SPEC):
     capacity=span*spec['specific_storage_per_m']/spec['theta_sat']
     length=spec['depth_m']
     intercept=spec['theta_res']+span*.999-capacity*transition
-    total=length*spec['initial_theta']+spec['rainfall_mm_h']/1000*spec['rain_duration_h']
+    wet=spec.get('rainfall_schedule')
+    rain=(sum(row['intensity_mm_h']*(row['end_h']-row['start_h'])/1000 for row in wet)
+          if wet is not None else spec['rainfall_mm_h']/1000*spec['rain_duration_h'])
+    total=length*spec['initial_theta']+rain
     surface=(total-length*intercept-capacity*length*length/2)/(1+capacity*length)
     if surface<0:raise ValueError('Hydrostatic saturated branch is not applicable.')
     return surface

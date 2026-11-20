@@ -1,4 +1,5 @@
 """OHQ vertical-column adapter. No engine source edits or external model uploads."""
+from hydrology.rainfall import validate_schedule, intervals, cumulative_depth_m
 from bisect import bisect_right
 import hashlib
 import json
@@ -22,10 +23,16 @@ DEFAULT = {
 
 
 def validate_column(spec, failure_depth):
-    if isinstance(spec,dict):spec={'formulation':'legacy_top',**spec}
-    if not isinstance(spec, dict) or set(spec) != set(DEFAULT):
+    if isinstance(spec,dict):
+        spec={'formulation':'legacy_top',**spec}
+        if 'rainfall_schedule' in spec:
+            if spec.get('rainfall_mm_h',0)!=0 or spec.get('rain_duration_h',0)!=0:
+                raise ValueError('Use a rainfall schedule or a single pulse; omit or zero both pulse fields for a schedule.')
+            spec={'rainfall_mm_h':0.,'rain_duration_h':0.,**spec}
+    if not isinstance(spec, dict) or set(spec)-{'rainfall_schedule'} != set(DEFAULT):
         raise ValueError('Provide the complete supported soil-column specification.')
     for name, value in spec.items():
+        if name=='rainfall_schedule':continue
         if name == 'formulation':
             if value not in ('legacy_top','cell_centred'):
                 raise ValueError('Column formulation must be legacy_top or cell_centred.')
@@ -44,6 +51,8 @@ def validate_column(spec, failure_depth):
     for key, (lower, upper) in bounds.items():
         if not lower <= spec[key] <= upper:
             raise ValueError(f'{key} must be between {lower} and {upper}.')
+    if 'rainfall_schedule' in spec:
+        spec['rainfall_schedule']=validate_schedule(spec['rainfall_schedule'],spec['duration_h'])
     maximum_cells=64 if spec['formulation']=='cell_centred' else 32
     if not isinstance(spec['cells'], int) or not 2 <= spec['cells'] <= maximum_cells:
         raise ValueError(f'Use 2 to {maximum_cells} soil cells for the selected formulation.')
@@ -77,13 +86,9 @@ def render(folder, spec):
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
     duration = spec['duration_h']/24
-    rain_end = spec['rain_duration_h']/24
-    # OHQ precipitation records are (start_day, end_day, interval_depth_METRES).
-    rain = []
-    if rain_end:
-        rain.append(f"0,{rain_end:.17g},{spec['rainfall_mm_h']*spec['rain_duration_h']/1000:.17g}")
-    if rain_end < duration:
-        rain.append(f'{rain_end:.17g},{duration:.17g},0')
+    # Native records are interval TOTAL depths in metres, not intensities.
+    rain=[f'{start/24:.17g},{end/24:.17g},{rate*(end-start)/1000:.17g}'
+          for start,end,rate in intervals(spec)]
     (folder/'rainfall.csv').write_text('\n'.join(rain)+'\n')
     lines = [f'loadtemplate; filename={ENGINE}/resources/main_components.json',
              f'addtemplate; filename={ENGINE}/resources/unsaturated_soil.json',
@@ -273,7 +278,7 @@ def summarize_column(observations,spec,failure_depth):
     for t,_ in observations['surface_storage']:
         total=interpolate(observations['surface_storage'],t)+interpolate(observations['drainage_storage'],t)
         total+=sum(interpolate(observations[f'storage_{i}'],t) for i in range(spec['cells']))
-        expected=spec['depth_m']*spec['initial_theta']+spec['rainfall_mm_h']/1000*min(t,spec['rain_duration_h'])
+        expected=spec['depth_m']*spec['initial_theta']+cumulative_depth_m(spec,t)
         residuals.append(total-expected)
     residual=max(abs(v) for v in residuals)
     minimum_surface=min(value for _,value in observations['surface_storage'])
@@ -285,7 +290,9 @@ def summarize_column(observations,spec,failure_depth):
     return {'pressure_history':history, 'specification':spec, 'reference_depths_m':depths,
             'profiles':profiles, 'water_balance_max_residual_m3':residual,
             'minimum_surface_storage_m3':minimum_surface,
-            'rainfall_total_m':spec['rainfall_mm_h']*spec['rain_duration_h']/1000,
+            'rainfall_total_m':cumulative_depth_m(spec,duration),
+            'rainfall_intervals':[{'start_h':start,'end_h':end,'intensity_mm_h':rate} for start,end,rate in intervals(spec)],
+            'rainfall_convention':'Piecewise constant intensity over horizontal area; [start,end), zero in gaps; native interval total depths in metres.',
             'failure_depth_m':failure_depth,
             'formulation':spec['formulation'],
             'pressure_mapping':('Linear total-head interpolation at cell-centre elevations; pressure = total head minus failure-plane elevation.' if spec['formulation']=='cell_centred' else

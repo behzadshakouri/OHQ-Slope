@@ -79,6 +79,8 @@ python3 -m uncertainty.run models/cell_centred_example.json --output results/cel
 Existing requests keep the legacy
 model. See [cell-centred equations and verification](docs/cell_centred_column.md).
 
+For repeated rainfall, choose **Repeated or variable rainfall** in the interface or run `python3 -m uncertainty.run models/repeated_rainfall_example.json --output results/repeated-rainfall.json`. See [schedule inputs and verification](docs/rainfall_schedules.md).
+
 The browser, API, and command-line runner use the same workflow, stability, and uncertainty modules. See [the calculation specification](docs/calculation.md) and [API contract](docs/api.md).
 
 ## Verify

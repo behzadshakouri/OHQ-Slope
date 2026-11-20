@@ -46,3 +46,7 @@ For an ensemble in column mode, add a nonempty `hydraulic_uncertainty` object. E
 ```
 
 Hydraulic jobs are limited to 100 realizations. Ranges must contain nominal values and remain physically admissible. A distinct OHQ solve is performed for each sample. Results set `hydraulic_uncertainty_sampled=true`, include a `realizations` ledger, and add `pressure_p05_m` and `pressure_p95_m` to each series row; `pressure_head_m` is then the pointwise median. No single realization's profile is labelled as the ensemble profile. A failed trial fails the job without an estimated probability.
+
+## Repeated rainfall
+
+OHQ column requests accept an optional `column.rainfall_schedule` list of `{start_h, end_h, intensity_mm_h}` objects. Omit or zero both single-pulse fields when using it. Normalized requests preserve the schedule; overlap and ambiguous combined forcing are rejected. See [semantics and limits](rainfall_schedules.md).

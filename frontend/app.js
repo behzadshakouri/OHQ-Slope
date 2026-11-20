@@ -44,6 +44,22 @@ function hydraulicChanged() {
   $('samples').max=limited?'100':'10000';if(limited&&Number($('samples').value)>100)$('samples').value='10';
   if($('pressure-source').value==='ohq_column') $('driver-note').textContent=active?'Each realization samples hydraulic and mechanical properties and runs OHQ separately. Transient grid sensitivity remains.':'One OHQ run supplies pressure. Hydraulic inputs and failure depth are fixed; transient grid sensitivity remains.';
 }
+function parseRainfallSchedule(text) {
+  if(!text.trim()) return [];
+  return text.trim().split('\n').map((line,index)=>{
+    const tokens=line.includes(',')?line.split(',').map(token=>token.trim()):line.trim().split(/\s+/);
+    const parts=tokens.map(Number);
+    if(tokens.some(token=>token==='')||parts.length!==3||!parts.every(Number.isFinite)) throw new Error(`Rain row ${index+1} needs start hour, end hour and intensity.`);
+    return {start_h:parts[0],end_h:parts[1],intensity_mm_h:parts[2]};
+  });
+}
+function rainfallChanged() {
+  const hydro=$('pressure-source').value==='ohq_column';
+  const scheduled=$('rain-mode').value==='schedule';
+  $('rain-single').hidden=scheduled;$('rain-scheduled').hidden=!scheduled;
+  $('rainfall').disabled=$('rain-duration').disabled=!hydro||scheduled;
+  $('rain-schedule').disabled=!hydro||!scheduled;
+}
 function formulationChanged() {
   const centred=$('column-formulation').value==='cell_centred';
   $('column-cells').max=centred?'64':'32';
@@ -61,13 +77,13 @@ function advancedInputs() {
 function driverChanged() {
   const hydro=$('pressure-source').value==='ohq_column';
   $('column-inputs').hidden=!hydro;$('prescribed-inputs').hidden=hydro;
-  document.querySelectorAll('#column-inputs input,#column-inputs select').forEach(node=>{node.disabled=!hydro;});
+  document.querySelectorAll('#column-inputs input,#column-inputs select,#column-inputs textarea').forEach(node=>{node.disabled=!hydro;});
   $('pressure').disabled=hydro;
   $('driver-title').textContent=hydro?'OHQ rainfall column':'Reference calculation';
   $('driver-note').textContent=hydro?'Prototype column: one OHQ run supplies pressure. Hydraulic inputs and failure depth are fixed; transient grid sensitivity remains.':'Pressure is supplied by you; no hydrologic simulation is used.';
   $('engine-status').textContent=engineAvailable?'OHQ console built and available.': 'OHQ is not built. Use Python reference with prescribed pressure, or build the console; see the README.';
   $('submit').disabled=(hydro||$('stability-engine').value==='ohq_json')&&!engineAvailable;
-  modeChanged();
+  rainfallChanged();modeChanged();
 }
 
 function inputs() {
@@ -102,6 +118,7 @@ function reset() {
   inputs();advancedInputs();hydraulicInputs();$('sample-hydraulics').checked=false; $('mode').value = 'deterministic';$('pressure-source').value='ohq_column';$('stability-engine').value='python_reference';
   for(const field of ['value','min','max']) $('failure_depth_m-'+field).value='1';
   for(const [id,value] of Object.entries({rainfall:'40','rain-duration':'6',duration:'24',ksat:'0.5','initial-theta':'0.3',base:'sealed','column-formulation':'legacy_top'})) $(id).value=value;
+  $('rain-mode').value='single';$('rain-schedule').value='0.5, 1, 40\n1.5, 2.5, 20';
   $('pressure').value = '0, 0\n2, 0.15\n4, 0.35\n6, 0.65\n8, 1\n10, 0.75\n12, 0.45';
   $('samples').value = '2000'; $('seed').value = '42';formulationChanged(); driverChanged(); $('form-error').textContent = '';
 }
@@ -116,6 +133,10 @@ function scenario() {
     parameters.failure_depth_m.min=parameters.failure_depth_m.max=parameters.failure_depth_m.value;
     const column=Object.fromEntries(advanced.map(([key])=>[key,Number($('column-'+key).value)]));
     Object.assign(column,{rainfall_mm_h:Number($('rainfall').value),rain_duration_h:Number($('rain-duration').value),duration_h:Number($('duration').value),ksat_m_day:Number($('ksat').value),initial_theta:Number($('initial-theta').value),base:$('base').value,formulation:$('column-formulation').value});
+    if($('rain-mode').value==='schedule') {
+      column.rainfall_schedule=parseRainfallSchedule($('rain-schedule').value);
+      column.rainfall_mm_h=column.rain_duration_h=0;
+    }
     const request={mode:$('mode').value,pressure_source:source,stability_engine:$('stability-engine').value,parameters,column,samples:Number($('samples').value),seed:Number($('seed').value)};
     if($('mode').value==='ensemble'&&$('sample-hydraulics').checked) request.hydraulic_uncertainty=Object.fromEntries(hydraulicDefinitions.map(([key])=>[key,{min:Number($(`hydraulic-${key}-min`).value),max:Number($(`hydraulic-${key}-max`).value),distribution:$(`hydraulic-${key}-distribution`).value}]));
     return request;
@@ -251,6 +272,7 @@ $('scenario').addEventListener('submit',async event=>{
 $('cancel').onclick=async()=>{try{await api(`/api/jobs/${currentJob}`,{method:'DELETE'});}catch(error){$('status').textContent=error.message;}};
 $('sample-hydraulics').onchange=hydraulicChanged;
 $('column-formulation').onchange=formulationChanged;
+$('rain-mode').onchange=rainfallChanged;
 $('stability-engine').onchange=driverChanged;
 $('mode').onchange=modeChanged;$('reset').onclick=reset;
 $('pressure-source').onchange=()=>{if($('pressure-source').value==='ohq_column') {for(const field of ['value','min','max']) $('failure_depth_m-'+field).value=$('failure_depth_m-value').value;}driverChanged();};
