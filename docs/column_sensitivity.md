@@ -119,19 +119,6 @@ differences met both sets of targets. Use the normal assessment command to
 report such a valid result, or add `--require-pass` to return a failing exit
 status when an acceptance target is missed.
 
-## Full archive inventory
-
-```sh
-python3 -m validation.geostudio_archive /absolute/path/project.gsz --output results/geostudio-inventory.json
-```
-
-The inventory lists all file members by saved analysis folder, including project
-files, snapshots, mesh files, results tables, caches and unrecognized types.
-It records each member's size and ZIP CRC. Steps with a standard
-`NNN/node.csv` table are also listed. Analysis folder names are archive labels
-and do not establish which analyses OHQ can reproduce. The point reader above
-provides numerical interpretation for its supported variables.
-
 To distinguish implementation differences from discretization sensitivity, run
 the same six cases with the independent Python finite-volume integrator:
 
@@ -145,3 +132,34 @@ constitutive and boundary laws and maximum steps. This comparison checks the
 implementation and does not establish continuum accuracy. In the synthetic
 case, both solvers reproduced the same pressure sensitivity (0.166 m spatial,
 0.0262 m temporal).
+
+For finer independent checks, use `--fine-grid`:
+
+```sh
+python3 -m validation.wetting_front results/wetting-front-benchmark.json --fine-grid --output results/wetting-front-fine-grid.json
+```
+
+This runs 64, 128 and 256 cells at maximum steps of 7.5 and 3.75 s.
+Grid comparisons hold the maximum step fixed, and temporal comparisons
+hold the grid fixed. The JSON includes both sampled histories, solver step
+counts, water-balance residuals and the same case-specific acceptance targets.
+The top-level assessment and `--require-pass` still refer to the original
+native benchmark. Fine-grid pair statuses appear under `fine_grid.comparisons`.
+
+In the independent run, 128→256 cells met the spatial targets at both steps
+(peak pressure differences 0.0214 m and 0.0228 m). At 256 cells the 7.5→3.75 s
+comparison still changed pressure head by up to 0.0197 m, above the 0.005 m
+temporal target. The results reflect the benchmark's saved times and depths.
+
+## Full archive inventory
+
+```sh
+python3 -m validation.geostudio_archive /absolute/path/project.gsz --output results/geostudio-inventory.json
+```
+
+The inventory lists all file members by saved analysis folder, including project
+files, snapshots, mesh files, results tables, caches and unrecognized types.
+It records each member's size and ZIP CRC. Steps with a standard
+`NNN/node.csv` table are also listed. Analysis folder names are archive labels
+and do not establish which analyses OHQ can reproduce. The point reader above
+provides numerical interpretation for its supported variables.

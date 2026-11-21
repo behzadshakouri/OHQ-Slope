@@ -85,6 +85,47 @@ def assess(study):
                 comparisons=comparisons)
 
 
+def independent_trial(spec, points):
+    hydro = reference(spec['cells'], spec['solver_step_h'] / 24, spec=spec,
+                      surface_boundary='reviewed_infiltration',
+                      failure_depth_m=points[0]['vertical_depth_m'])
+    extracted = {p['id']: sample_profile(hydro, p['vertical_depth_m']) for p in points}
+    return {'hydrology': hydro, 'extracted': extracted}
+
+
+def fine_grid_refinement(benchmark):
+    """Refine space and time independently over the same saved time grid."""
+    points = benchmark['points']
+    trials = {}
+    for cells in (64, 128, 256):
+        for seconds in (7.5, 3.75):
+            spec = dict(benchmark['column'], cells=cells, solver_step_h=seconds / 3600)
+            run = independent_trial(spec, points)
+            hydro = run['hydrology']
+            trials[cells, seconds] = dict(
+                cells=cells, maximum_step_s=seconds, steps=hydro['steps'],
+                water_balance_max_residual_m3=hydro['water_balance_max_residual_m3'],
+                extracted=run['extracted'])
+
+    comparisons = []
+    pairs = [('grid', (coarse, seconds), (2 * coarse, seconds))
+             for coarse in (64, 128) for seconds in (7.5, 3.75)]
+    pairs += [('time_step', (n, 7.5), (n, 3.75)) for n in (64, 128, 256)]
+    for axis, first, second in pairs:
+        a, b = (trials[key]['extracted'] for key in (first, second))
+        differences = {point: compare_points(a[point], b[point]) for point in a}
+        limits = LIMITS[axis]
+        passed = all(row[name] is not None and row[name] <= limit
+                     for row in differences.values() for name, limit in limits.items())
+        comparisons.append(dict(axis=axis, first=first, second=second,
+                                points=differences, limits=limits, passed=passed))
+    balance = max(row['water_balance_max_residual_m3'] for row in trials.values())
+    return {'trials': list(trials.values()), 'comparisons': comparisons,
+            'water_balance_max_residual_m3': balance,
+            'water_balance_passed': balance <= BALANCE_LIMIT_M3,
+            'scope': 'Independent finite-volume sensitivity at saved times. Finest grid is not an exact reference.'}
+
+
 def compare_independent(study):
     """Repeat the benchmark with the same discrete laws in the Python solver."""
     independent_trials = []
@@ -92,11 +133,9 @@ def compare_independent(study):
     for trial in study['trials']:
         spec = trial['specification']
         points = study['study']['points']
-        hydro = reference(spec['cells'], spec['solver_step_h'] / 24, spec=spec,
-                          surface_boundary='reviewed_infiltration',
-                          failure_depth_m=points[0]['vertical_depth_m'])
-        extracted = {p['id']: sample_profile(hydro, p['vertical_depth_m']) for p in points}
-        independent_trials.append(dict(trial, hydrology=hydro, extracted=extracted))
+        run = independent_trial(spec, points)
+        hydro, extracted = run['hydrology'], run['extracted']
+        independent_trials.append(dict(trial, **run))
         matched.append({
             'cells': spec['cells'],
             'maximum_step_s': spec['solver_step_h'] * 3600,
@@ -116,6 +155,8 @@ def main():
     parser.add_argument('--require-pass', action='store_true')
     parser.add_argument('--independent', action='store_true',
                         help='Run the independent finite-volume solver at matching grids and steps.')
+    parser.add_argument('--fine-grid', action='store_true',
+                        help='Run independent 64/128/256-cell refinement at 7.5 and 3.75 seconds.')
     args = parser.parse_args()
     if args.output.resolve() in (args.study.resolve(), BENCHMARK.resolve()):
         parser.error('Output must differ from the study and benchmark inputs.')
@@ -125,6 +166,8 @@ def main():
         result = assess(study)
         if args.independent:
             result['independent'] = compare_independent(study)
+        if args.fine_grid:
+            result['fine_grid'] = fine_grid_refinement(study['study'])
         result['study_sha256'] = hashlib.sha256(data).hexdigest()
     except (OSError, ValueError, KeyError, TypeError) as error:
         result = dict(state='failed', message=str(error), field_validated=False, fs_computed=False)
