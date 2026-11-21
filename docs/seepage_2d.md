@@ -158,3 +158,24 @@ m³. Grid refinement changes peak saved probe pressure by up to 5.53 mm;
 halving the maximum step changes it by up to 1.47 mm. These synthetic results
 verify coupling across the native components. Transfer to the GeoStudio slope
 requires matching its geometry, materials, initial pressures and boundaries.
+
+### Comparison with an audited GeoStudio flume archive
+
+The external flume case runner takes the saved archive and the two audited
+input mappings. It verifies the archive SHA-256, finds the Transient Seepage
+material region, reads the original initial pressures, and compares four
+actual archive mesh-node locations at saved times.
+
+```sh
+python3 -m validation.geostudio_native_case /path/to/project.gsz /path/to/case_input_manifest.json /path/to/archived_boundary_evidence.json --columns 8 --layers 14 --output results/flume-2h-coarse.json
+python3 -m validation.geostudio_native_case /path/to/project.gsz /path/to/case_input_manifest.json /path/to/archived_boundary_evidence.json --columns 16 --layers 28 --output results/flume-2h-fine.json
+```
+
+The two-hour case uses a midpoint staircase, fitted OHQ hydraulic functions,
+rainfall over horizontal plan area and sealed back and base. The surface
+maps the reviewed rainfall condition to the existing reviewed-infiltration
+OHQ JSON components, including an area-specific excess-water collector.
+Stock one-way outlets serve exposed risers and the right exit. This replaces
+the smooth sloping face with distinct tread and riser conditions. The mapped
+geometry, hydraulic fit and boundary form are approximations to the
+archived formulation. The diagnostic budget uses a unit out-of-plane width.

@@ -1,5 +1,6 @@
 """Check a native OHQ soil grid under uniform and localized rainfall."""
 import argparse
+from bisect import bisect_left
 import hashlib
 import json
 import math
@@ -14,7 +15,12 @@ from hydrology.rainfall import cumulative_depth_m
 
 def grid_trial(folder, spec, rain_rates_mm_h, *, link_columns=True, right_outlet_rows=(),
                route_runoff=False, width_m=.2, column_cells=None, surface_slope=.01,
-               exposed_step_outlets=False):
+               exposed_step_outlets=False, engine_seconds=120):
+    if type(engine_seconds) is not int or not 1 <= engine_seconds <= 900:
+        raise ValueError('Native engine budget must be 1–900 seconds.')
+    reviewed = spec.get('surface_boundary') == 'reviewed_infiltration'
+    if reviewed and route_runoff:
+        raise ValueError('Use either reviewed drainage or connected surface runoff.')
     datum_at_surface = column_cells is None
     if column_cells is None:
         column_cells = [spec['cells']] * len(rain_rates_mm_h)
@@ -32,6 +38,8 @@ def grid_trial(folder, spec, rain_rates_mm_h, *, link_columns=True, right_outlet
         f'addtemplate;filename={ROOT}/components/cell_centred_column.json',
     ]
     datum_shift = -spec['depth_m'] if datum_at_surface else 0.
+    if reviewed:
+        lines.append(f'addtemplate;filename={ROOT}/components/reviewed_surface.json')
     rain_specs = [dict(spec, rainfall_mm_h=rate) for rate in rain_rates_mm_h]
     initial = {}
     for i, (rain, count) in enumerate(zip(rain_specs, column_cells)):
@@ -55,8 +63,17 @@ def grid_trial(folder, spec, rain_rates_mm_h, *, link_columns=True, right_outlet
                 lines.append(f'create link;type=soil_to_soil_H_link,from=Soil{i-1}_{left_j},'
                              f'to={soil},name=Lateral{i}_{j},length={dx},area={dz}')
 
-        lines.append(f'create link;type=Column Centre Surface Link,from=Surface{i},to=Soil{i}_0,'
-                     f'name=Infiltration{i}')
+        if reviewed:
+            collector = f'Excess{i}'
+            lines.extend([
+                f'create block;type=Column Reviewed Excess Collector,name={collector},area={dx},Precipitation=Rain{i}',
+                f'create link;type=Column Reviewed Rain Link,from=Surface{i},to=Soil{i}_0,name=Infiltration{i}',
+                f'create link;type=Column Reviewed Excess Link,from=Soil{i}_0,to={collector},name=Reject{i}',
+            ])
+            initial[collector] = ('Storage', 0.)
+        else:
+            lines.append(f'create link;type=Column Centre Surface Link,from=Surface{i},to=Soil{i}_0,'
+                         f'name=Infiltration{i}')
 
     outlet_cells = [(len(column_cells) - 1, j) for j in right_outlet_rows]
     if exposed_step_outlets:
@@ -93,10 +110,12 @@ def grid_trial(folder, spec, rain_rates_mm_h, *, link_columns=True, right_outlet
         if obj.startswith('Soil'):
             observe(f'pressure_{obj}', obj, 'pressure_head')
             observe(f'theta_{obj}', obj, 'theta')
-    lines.extend(native_settings(spec, centred=True))
+    lines.extend(line.replace('quantity=maximum_time_allowed,value=120',
+                              f'quantity=maximum_time_allowed,value={engine_seconds}')
+                 for line in native_settings(spec, centred=True, reviewed=reviewed))
     model = folder / 'section.ohq'
     model.write_text('\n'.join(lines) + '\n')
-    raw = run_engine(folder, model)
+    raw = run_engine(folder, model, wall_time_limit_s=engine_seconds+5)
     start_values = {f'storage_{obj}':value for obj, (_, value) in initial.items()}
     for obj in initial:
         if obj.startswith('Soil'):
@@ -124,7 +143,12 @@ def grid_trial(folder, spec, rain_rates_mm_h, *, link_columns=True, right_outlet
     def runoff(time):
         return interpolate(raw['storage_RunoffOutlet'], time) if route_runoff else 0.
 
-    residual = max(abs(discharge(time) + runoff(time) + math.fsum(
+    excess_series = [raw[f'storage_Excess{i}'] for i in range(len(column_cells))] if reviewed else []
+
+    def excess(time):
+        return math.fsum(interpolate(series, time) for series in excess_series)
+
+    residual = max(abs(discharge(time) + runoff(time) + excess(time) + math.fsum(
         storage(i, time) - dx * (column_cells[i] * dz * spec['initial_theta'] + cumulative_depth_m(rain, time))
         for i, rain in enumerate(rain_specs))) for time, _ in raw['storage_Surface0'])
     duration = spec['duration_h']
@@ -145,7 +169,11 @@ def grid_trial(folder, spec, rain_rates_mm_h, *, link_columns=True, right_outlet
     return dict(histories=histories, water_balance_max_residual_m3=residual,
                 rainfall_mm_h=rain_rates_mm_h, connected=link_columns, outlet_rows=list(right_outlet_rows),
                 outlet_history=[dict(time_h=time, cumulative_discharge_m3=discharge(time),
-                                     cumulative_runoff_m3=runoff(time)) for time in times],
+                                     cumulative_runoff_m3=runoff(time),
+                                     cumulative_surface_excess_m3=excess(time)) for time in times],
+                reviewed_surface=reviewed, engine_limit_s=engine_seconds,
+                minimum_native_excess_increment_m3=min(
+                    (b[1]-a[1] for series in excess_series for a, b in zip(series, series[1:])), default=0.),
                 routed_runoff=route_runoff, outlet_cells=outlet_cells, column_cells=column_cells,
                 x_edges_m=[i * dx for i in range(len(column_cells) + 1)], cell_height_m=dz,
                 surface_elevation_m=[datum_shift + count * dz for count in column_cells],
@@ -265,13 +293,19 @@ def runoff_benchmark(folder):
 
 
 def sample_at_probe(run, x_m, elevation_m):
-    """Interpolate between cell centres within the terrace containing the probe."""
+    """Sample pressure at a physical probe bracketed by wet-domain cell centres."""
     edges = run['x_edges_m']
     heights = run['surface_elevation_m']
     dz = run['cell_height_m']
-    index = next(i for i, right in enumerate(edges[1:]) if x_m < right)
-    columns = [i for i, height in enumerate(heights) if height == heights[index]]
-    centers = [(edges[i] + edges[i + 1])/2 for i in columns]
+    all_centers = [(a + b)/2 for a, b in zip(edges, edges[1:])]
+    i = bisect_left(all_centers, x_m - 1e-10)
+    if i < len(all_centers) and abs(all_centers[i] - x_m) <= 1e-10:
+        columns = [i]
+    elif 0 < i < len(all_centers):
+        columns = [i-1, i]
+    else:
+        raise ValueError('Probe is outside the horizontal cell-centre bounds.')
+    centers = [all_centers[j] for j in columns]
     samples = []
     for rows in zip(*(run['histories'][i] for i in columns)):
         values = []
