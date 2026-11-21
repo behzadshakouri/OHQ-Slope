@@ -6,12 +6,37 @@ from pathlib import Path
 import zipfile
 import unittest
 
-from validation.column_sensitivity import sample_profile, metrics
+from hydrology.column import DEFAULT, validate_column
+from validation.column_sensitivity import sample_profile, metrics, validate_study_column
 from validation.column_comparison import compare
 from validation.geostudio_archive import mesh_nodes,graph_location,extract
 
 
 class ColumnSensitivityTests(unittest.TestCase):
+    def test_offline_resolution_does_not_expand_app_limits(self):
+        spec = dict(DEFAULT, formulation='cell_centred', cells=256, duration_h=2,
+                    rain_duration_h=2, solver_step_h=1/960, output_interval_h=1/60)
+        near_surface = spec['depth_m']/256
+        validate_study_column(spec, near_surface)
+        with self.assertRaises(ValueError):
+            validate_column(spec, near_surface)
+        for overrides in ({'cells':257}, {'output_interval_h':1/120}, {'solver_step_h':1/1920}):
+            with self.subTest(overrides=overrides), self.assertRaises(ValueError):
+                validate_study_column(dict(spec, **overrides), near_surface)
+
+    def test_archive_comparison_selects_saved_times_without_interpolation(self):
+        point = {'id':'p', 'vertical_depth_m':.2}
+        series = [{'time_h':i/2, 'pressure_head_m':-i} for i in range(3)]
+        trial = {'state':'completed', 'specification':{'cells':16,'solver_step_h':1/240},
+                 'extracted':{'p':series}}
+        study = {'state':'completed', 'study':{'points':[point]},'trials':[trial]}
+        ref = {'points':{'p':{'point':point,'series':[series[0], series[-1]]}}}
+        value = compare(study, ref)['archive_comparisons'][0]['points']['p']
+        self.assertEqual((value['rmse'], value['samples']), (0, 2))
+        ref['points']['p']['series'][1] = {'time_h':.9,'pressure_head_m':-2}
+        with self.assertRaises(ValueError):
+            compare(study, ref)
+
     def test_sample_moisture_separately_from_pressure(self):
         hydro={'reference_depths_m':[.1,.3], 'profiles':[{'time_h':0,'pressure_head_m':[1,5],'theta':[.2,.4]}]}
         row=sample_profile(hydro,.2)[0]

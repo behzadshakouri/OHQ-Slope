@@ -5,7 +5,7 @@ study. Case geometry, extracted archive data, fitted parameters and research
 interpretation remain outside the software repository. No FS is evaluated.
 
 An external study supplies `formulation_role: "hydrology_only"`, a complete
-`column` specification accepted by the normal adapter, and a `points` list.
+`column` specification, and a `points` list.
 Each point needs a unique `id` and `vertical_depth_m`. Additional coordinate
 and provenance fields are preserved, allowing the same hydrology to be sampled
 at several observation depths without equating those depths to slip surfaces.
@@ -14,9 +14,24 @@ at several observation depths without equating those depths to slip surfaces.
 python3 -m validation.column_sensitivity /absolute/path/study.json --cells 16 32 64 --step-divisions 240 480 --engine-seconds 600 --output results/column-study.json
 ```
 
-The existing grid, physical-input and time-step bounds are retained. The only
-runtime exception is an explicit offline engine allowance of 1–900 seconds,
-with a process guard five seconds longer; web/API budgets are unchanged.
+For cell-centred studies the offline runner accepts up to 256 cells, a
+3.75-second maximum step (`--step-divisions 960`), and output intervals as
+short as one minute (`output_interval_h: 0.016666666666666666`). Keep high
+resolution runs short enough to fit the explicit 1–900 second engine allowance.
+The process guard allows five additional seconds. The native study retains the
+physical-input limits and the 50,000 nominal-step and 500 output-time bounds.
+The web and API keep their current resolution and runtime limits.
+
+For a focused first-pulse check, make a copy of the external study, set
+`duration_h` to the intended cutoff, and retain only rainfall intervals inside
+that window, clipping the final interval to the cutoff if needed. Run cases
+with different combinations of grid and maximum step separately if they do
+not form a complete matrix.
+
+```sh
+python3 -m validation.column_sensitivity /absolute/path/first-pulse.json --cells 128 256 --step-divisions 480 --engine-seconds 900 --output results/first-pulse-grid.json
+python3 -m validation.column_sensitivity /absolute/path/first-pulse.json --cells 128 --step-divisions 480 960 --engine-seconds 900 --output results/first-pulse-time.json
+```
 Every trial preserves the generated model, raw native output, solution log,
 explicit status, elapsed time and water-balance checks. The aggregate is failed
 if any requested trial fails. Solver failures are not redrawn or discarded.
@@ -59,7 +74,10 @@ The reference object contains `points`, keyed by point ID; each entry has the
 original `point` mapping and a `series` of `time_h` with `theta` or
 `pressure_head_m`. Comparisons require completed native trials, identical
 physical inputs across the refinement matrix, matching extraction metadata,
-and matching saved times. Bias is native minus reference. RMSE, maximum absolute
+and a native sample at each archived timestamp. A denser native series may be
+compared directly against a sparser archive. For a shortened run, trim the
+external archive reference to the same time window first. Bias is native minus
+reference. RMSE, maximum absolute
 and final differences are descriptive saved-time statistics, not uncertainty
 bounds. Refinement statistics are reported separately from archive disagreement.
 

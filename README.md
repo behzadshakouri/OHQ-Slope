@@ -119,6 +119,18 @@ python3 scripts/build_ohq.py --qmake /path/to/Qt/gcc_64/bin/qmake
 
 Qt6, a C++17 compiler, make, Armadillo, LAPACK/BLAS, GSL, and SuperLU are required; see upstream build instructions for platform details. The helper records binary provenance under ignored `build/ohq-console/`. No executable or generated kernel is committed. The pinned engine has been built locally and checked with synthetic column cases, not field validated. See [column conventions and verification limits](docs/column.md), including the time-zero observation workaround and unresolved transient spatial sensitivity. [Independent flow checks](docs/verification.md) cover analytical diffusion, nonlinear unsaturated infiltration, and ponding/saturation. The legacy ponding case has a transient pressure difference of about 0.044 m at 32 cells. The selectable cell-centred version improves that comparison, while its drier wetting-front case still needs finer-grid investigation.
 
+### Check a fresh native build
+
+Run the synthetic cell-centred case and the test suite from the repository root.
+
+```sh
+python3 -m uncertainty.run models/cell_centred_example.json --output results/cell-centred-smoke.json
+python3 -m unittest discover -s tests -v
+```
+
+For external studies, see [offline column sensitivity](docs/column_sensitivity.md)
+for the JSON input format, fine-grid commands, and archive comparisons.
+
 ## Structure
 
 | Directory | Purpose |

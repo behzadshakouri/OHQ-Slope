@@ -7,7 +7,7 @@ from pathlib import Path
 import time
 
 from hydrology.column import (ROOT, BINARY, render, run_engine, summarize_column,
-                              validate_column, map_pressure)
+                              validate_column, map_pressure, reference_depths)
 
 
 def sample_profile(hydro,depth):
@@ -33,11 +33,34 @@ def metrics(a,b,field):
             'samples':len(delta),'convention':'first minus second; saved times only'}
 
 
+def validate_study_column(spec, extraction_depth):
+    """Allow bounded offline cell-centred resolution without changing app limits."""
+    if spec.get('formulation') != 'cell_centred':
+        validate_column(spec, extraction_depth)
+        return
+    cells = spec['cells']
+    step = spec['solver_step_h']
+    interval = spec['output_interval_h']
+    if type(cells) is not int or not 2 <= cells <= 256:
+        raise ValueError('Offline cell-centred studies support 2–256 cells.')
+    if (type(step) not in (float, int) or type(interval) not in (float, int)
+            or not 1/960 <= step <= interval or not 1/60 <= interval <= 6):
+        raise ValueError('Use a step of at least 3.75 s and outputs spaced 1 min to 6 h apart.')
+    duration = spec['duration_h']
+    if duration / step > 50000 or duration / interval > 499:
+        raise ValueError('Use at most 50000 nominal steps and 500 output times.')
+    validate_column({**spec, 'cells': min(cells, 64), 'solver_step_h': max(step, 1/600),
+                     'output_interval_h': max(interval, .05)}, spec['depth_m']/2)
+    depths = reference_depths(spec)
+    if not 0 < extraction_depth or not depths[0] <= extraction_depth <= depths[-1]:
+        raise ValueError('Extraction depth outside cell references.')
+
+
 def run_trial(folder,spec,points,seconds):
     if type(seconds) is not int or not 1<=seconds<=900:raise ValueError('Use 1–900 engine seconds.')
     if not points:raise ValueError('Specify at least one observation point.')
     for point in points:
-        validate_column(spec,point['vertical_depth_m'])
+        validate_study_column(spec,point['vertical_depth_m'])
     folder=Path(folder).resolve();folder.mkdir(parents=True,exist_ok=True)
     (folder/'solution_details.txt').unlink(missing_ok=True)
     model=render(folder,spec)
@@ -68,8 +91,8 @@ def main():
     parser.add_argument('--output',type=Path,default=Path('results/column-sensitivity.json'))
     args=parser.parse_args()
     if args.output.resolve()==args.study.resolve():parser.error('Output must differ from input.')
-    if not 1<=args.engine_seconds<=900 or any(not 2<=n<=64 for n in args.cells) or any(n not in (240,480) for n in args.step_divisions):
-        parser.error('Use 2–64 cells, step divisions 240/480, and 1–900 engine seconds.')
+    if not 1<=args.engine_seconds<=900 or any(not 2<=n<=256 for n in args.cells) or any(n not in (240,480,960) for n in args.step_divisions):
+        parser.error('Use 2–256 cells, step divisions 240/480/960, and 1–900 engine seconds.')
     args.output.parent.mkdir(parents=True,exist_ok=True)
     result={'state':'running','field_validated':False,'fs_computed':False,'trials':[],
             'input_sha256':hashlib.sha256(args.study.read_bytes()).hexdigest(),

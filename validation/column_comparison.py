@@ -1,11 +1,25 @@
 """Compare completed column sensitivity runs and coordinate-labelled archive series."""
 import argparse
+from bisect import bisect_left
 import hashlib
 import json
 from pathlib import Path
 
 from hydrology.column import ROOT
 from validation.column_sensitivity import metrics
+
+
+def match_saved_times(native, reference):
+    """Select native rows at archived times without interpolating either series."""
+    times = [row['time_h'] for row in native]
+    matched = []
+    for row in reference:
+        target = row['time_h']
+        index = bisect_left(times, target - 1e-8)
+        if index == len(times) or abs(times[index] - target) > 1e-8:
+            raise ValueError('An archived timestamp is absent from the native output.')
+        matched.append(native[index])
+    return matched
 
 
 def compare(study,reference):
@@ -27,7 +41,8 @@ def compare(study,reference):
         row={'cells':t['specification']['cells'],'step_h':t['specification']['solver_step_h'],'points':{}}
         for p in points:
             ref=reference['points'][p['id']]['series'];field='theta' if 'theta' in ref[0] else 'pressure_head_m'
-            row['points'][p['id']]={'quantity':field,**metrics(t['extracted'][p['id']],ref,field)}
+            native = match_saved_times(t['extracted'][p['id']], ref)
+            row['points'][p['id']]={'quantity':field,**metrics(native,ref,field)}
         agreement.append(row)
     refinement=[]
     def add(a,b,axis):
