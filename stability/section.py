@@ -14,22 +14,32 @@ def fixed_surface_history(run, slices, base_points, water_unit_weight_kn_m3=9.80
     if not slices or len(slices) != len(base_points):
         raise ValueError('Provide one basal pressure sampling point per slice.')
     pressure = [sample_at_probe(run,x,y,include_boundary_cells=True) for x,y in base_points]
+    return evaluate_slice_pressures(slices,[
+        [{'time_h':row['time_h'],'pressure_kpa':row['pressure_head_m']*water_unit_weight_kn_m3}
+         for row in series]
+        for series in pressure
+    ])
+
+
+def evaluate_slice_pressures(slices, pressure):
+    """Calculate Bishop FS for synchronized, per-slice pressure histories in kPa."""
     history = []
     for rows in zip(*pressure, strict=True):
-        pressure_kpa = [row['pressure_head_m']*water_unit_weight_kn_m3 for row in rows]
+        time = rows[0]['time_h']
+        if any(row['time_h'] != time for row in rows):
+            raise ValueError('Slice pressure histories must use the same times.')
+        pressure_kpa = [row['pressure_kpa'] for row in rows]
         parts = [replace(part,pressure_kpa=u) for part,u in zip(slices,pressure_kpa,strict=True)]
-        history.append({'time_h':rows[0]['time_h'],'pressure_kpa':pressure_kpa,
+        history.append({'time_h':time,'pressure_kpa':pressure_kpa,
                         'factor_of_safety':factor_of_safety(parts)})
     return history
 
 
-def circular_slices(ground, entry_x, exit_x, sagitta_m, count,
-                    unit_weight, cohesion, friction_rad, suction_friction_rad=0.):
-    """Build a lower circular arc between two ground intersections and slice it vertically."""
+def circle_parameters(ground, entry_x, exit_x, sagitta_m):
+    """Return the centre and radius for a lower circular arc."""
     if (len(ground) < 2 or any(a[0] >= b[0] for a,b in zip(ground,ground[1:]))
-            or not ground[0][0] <= entry_x < exit_x <= ground[-1][0]
-            or type(count) is not int or count < 2 or not math.isfinite(unit_weight) or unit_weight <= 0):
-        raise ValueError('Invalid ground intersection, slice count, or unit weight.')
+            or not ground[0][0] <= entry_x < exit_x <= ground[-1][0]):
+        raise ValueError('Invalid ground intersections.')
     y0, y1 = interpolate(ground,entry_x), interpolate(ground,exit_x)
     dx, dy = exit_x-entry_x, y1-y0
     chord = math.hypot(dx,dy)
@@ -41,6 +51,17 @@ def circular_slices(ground, entry_x, exit_x, sagitta_m, count,
     cy = (y0+y1)/2+dx*offset/chord
     if cy <= max(y0,y1):
         raise ValueError('The candidate extends beyond the lower circular branch.')
+
+    return cx, cy, radius
+
+
+def circular_slices(ground, entry_x, exit_x, sagitta_m, count,
+                    unit_weight, cohesion, friction_rad, suction_friction_rad=0.):
+    """Build a lower circular arc between two ground intersections and slice it vertically."""
+    if type(count) is not int or count < 2 or not math.isfinite(unit_weight) or unit_weight <= 0:
+        raise ValueError('Invalid slice count or unit weight.')
+    cx, cy, radius = circle_parameters(ground,entry_x,exit_x,sagitta_m)
+    dx = exit_x-entry_x
 
     def base(x):
         vertical = math.sqrt(max(0.,radius**2-(x-cx)**2))
