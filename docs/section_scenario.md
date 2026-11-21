@@ -107,3 +107,5 @@ libraries as the forward console. A synthetic four-cell run with 24 samples
 and 4 burn-in steps verified the export, OHQ executable, and chain output.
 Use measured heads, justified error scales, and convergence checks for
 scientific calibration.
+
+See [the 2D seepage-to-circular-slip benchmark](geostudio_fixed_slip.md) for an offline comparison with saved GeoStudio results.

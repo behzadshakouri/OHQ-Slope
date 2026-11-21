@@ -1,5 +1,5 @@
 """Render and solve an elevation-aligned soil grid through native OHQ."""
-from bisect import bisect_left
+from bisect import bisect_left, bisect_right
 import hashlib
 import math
 
@@ -192,27 +192,45 @@ def grid_trial(folder, spec, rain_rates_mm_h, *, link_columns=True, right_outlet
                 model_sha256=hashlib.sha256(model.read_bytes()).hexdigest())
 
 
-def sample_at_probe(run, x_m, elevation_m):
-    """Sample pressure at a physical probe bracketed by wet-domain cell centres."""
+def sample_at_probe(run, x_m, elevation_m, *, include_boundary_cells=False):
+    """Interpolate between centres, with optional constant half-cell boundary extension."""
     edges = run['x_edges_m']
     heights = run['surface_elevation_m']
     dz = run['cell_height_m']
-    all_centers = [(a + b)/2 for a, b in zip(edges, edges[1:])]
-    i = bisect_left(all_centers, x_m - 1e-10)
-    if i < len(all_centers) and abs(all_centers[i] - x_m) <= 1e-10:
+    centers = [(a + b)/2 for a, b in zip(edges, edges[1:])]
+    i = bisect_left(centers, x_m - 1e-10)
+    if i < len(centers) and abs(centers[i] - x_m) <= 1e-10:
         columns = [i]
-    elif 0 < i < len(all_centers):
+    elif 0 < i < len(centers):
         columns = [i-1, i]
+    elif include_boundary_cells and edges[0] <= x_m <= edges[-1]:
+        columns = [0 if i == 0 else len(centers)-1]
     else:
         raise ValueError('Probe is outside the horizontal cell-centre bounds.')
-    centers = [all_centers[j] for j in columns]
+
+    if include_boundary_cells:
+        owner = min(len(centers)-1,bisect_right(edges,x_m)-1)
+        floor = heights[owner]-run['column_cells'][owner]*dz
+        if (not edges[0] <= x_m <= edges[-1]
+                or not floor-1e-10 <= elevation_m <= heights[owner]+1e-10):
+            raise ValueError('Probe is outside the soil domain.')
+        # A step can put the neighbouring column outside the soil at this elevation.
+        if any(elevation_m > heights[j]+1e-10 or
+               elevation_m < heights[j]-run['column_cells'][j]*dz-1e-10 for j in columns):
+            columns = [owner]
+
+    def sample(series, target):
+        if include_boundary_cells:
+            target = max(series[0][0],min(series[-1][0],target))
+        return interpolate(series,target)
+
     samples = []
     for rows in zip(*(run['histories'][i] for i in columns)):
         values = []
         for i, row in zip(columns, rows):
-            pressure_by_z = [(heights[i] - (j + .5)*dz, pressure)
+            pressure_by_z = [(heights[i] - (j+.5)*dz, pressure)
                              for j, pressure in enumerate(row['pressure_head_m'])]
-            values.append(interpolate(list(reversed(pressure_by_z)), elevation_m))
-        samples.append({'time_h': rows[0]['time_h'],
-                        'pressure_head_m': interpolate(list(zip(centers, values)), x_m)})
+            values.append(sample(list(reversed(pressure_by_z)), elevation_m))
+        samples.append({'time_h':rows[0]['time_h'],
+                        'pressure_head_m':sample([(centers[j],v) for j,v in zip(columns,values)],x_m)})
     return samples
