@@ -82,7 +82,13 @@ function driverChanged() {
   const section = isSection();
   $('stability-inputs').hidden = $('stability-inputs').disabled = section;
   $('section-inputs').hidden = !section;
-  $('stability-visual').hidden = section;
+  if (!section) for (const [id] of sectionDimensions) $(id).disabled = true;
+  if (!currentJob) {
+    $('result-heading').textContent = section ? '2D seepage results' : 'Factor of safety';
+    $('empty-prompt').textContent = section ? 'Run a scenario to see its pressure and water balance.' :
+      'Run a scenario to see its stability response.';
+    $('empty-help').hidden = section;
+  }
   const hydro=$('pressure-source').value==='ohq_column';
   $('column-inputs').hidden=!hydro;$('prescribed-inputs').hidden=hydro;
   document.querySelectorAll('#column-inputs input,#column-inputs select,#column-inputs textarea').forEach(node=>{node.disabled=!hydro;});
@@ -93,6 +99,7 @@ function driverChanged() {
   $('submit').disabled=(section||hydro||$('stability-engine').value==='ohq_json')&&!engineAvailable;
   rainfallChanged();
   if (!section) modeChanged();
+  else updateSlopePreview();
 }
 
 function inputs() {
@@ -122,6 +129,7 @@ function modeChanged() {
   for(const field of ['min','max']) $('failure_depth_m-'+field).disabled=hydro||!ensemble;
   $('range-help').textContent = ensemble ? 'Each mechanical range is sampled independently and uniformly. These example ranges are illustrative.' : 'The deterministic run uses the value column.';
   hydraulicChanged();
+  updateSlopePreview();
 }
 function defaultStabilityEngine() {
   return engineAvailable ? 'ohq_json' : 'python_reference';
@@ -176,6 +184,137 @@ function element(tag, attrs, text) {
   if (text !== undefined) node.textContent = text;
   return node;
 }
+const geometryNumber = new Intl.NumberFormat(undefined, {maximumFractionDigits:4});
+const sectionDimensions = [['section-width','width_m'], ['section-height','cell_height_m']];
+const materialColors = ['#c4ddd3','#e7cbac','#bccfe7','#d5c9e3','#e7dbac','#bbdbdf'];
+
+function geometryFrame(width, height) {
+  const scale = Math.min(548/width, 212/height);
+  const left = (640-width*scale)/2;
+  const bottom = (280+height*scale)/2;
+  return {x:value=>left+scale*value,y:value=>bottom-scale*value};
+}
+
+function drawSectionPreview(drawing, draft, stacks) {
+  const {width_m:width, cell_height_m:dz, probes} = draft;
+  const height = dz*Math.max(...stacks.map(stack=>stack.length));
+  const dx = width/stacks.length;
+  const names = [...new Set(stacks.flat())];
+  const colors = new Map(names.map((name,index)=>[name,materialColors[index%materialColors.length]]));
+  const {x,y} = geometryFrame(width,height);
+  const surface = [];
+  stacks.forEach((stack,i)=>{
+    stack.forEach((material,j)=>{
+      drawing.append(element('rect',{x:x(i*dx),y:y((stack.length-j)*dz),
+        width:x(dx)-x(0),height:y(0)-y(dz),fill:colors.get(material),class:'slope-cell'}));
+    });
+    surface.push([x(i*dx),y(stack.length*dz)],[x((i+1)*dx),y(stack.length*dz)]);
+  });
+  drawing.append(element('polyline',{points:surface.join(' '),class:'slope-ground'}));
+  let hasProbe = false;
+  for (const [name,probe] of Object.entries(probes ?? {})) {
+    if (!Number.isFinite(probe?.x_m) || !Number.isFinite(probe?.elevation_m) ||
+        probe.x_m < 0 || probe.x_m > width || probe.elevation_m < 0) continue;
+    const column = Math.min(stacks.length-1,Math.floor(probe.x_m/dx));
+    if (probe.elevation_m > stacks[column].length*dz) continue;
+    const marker = element('circle',{cx:x(probe.x_m),cy:y(probe.elevation_m),r:5,
+      class:'slope-probe',tabindex:0,'aria-label':name});
+    marker.append(element('title',{},name));
+    drawing.append(marker);
+    hasProbe = true;
+  }
+  const fmt = n=>geometryNumber.format(n);
+  return {dimensions:[fmt(width)+' m wide',fmt(height)+' m high',stacks.length+' columns',fmt(dz)+' m cells'].join(' · '),
+    legend:[...colors,...(hasProbe ? [['Pressure probe','#a4482c']] : [])],
+    note:'Horizontal and vertical dimensions use the same scale.'};
+}
+
+function stabilityGeometryValue(key, sampled) {
+  const values = (sampled ? ['min','max'] : ['value']).map(field=>{
+    const input = $(key+'-'+field);
+    return input.validity.valid ? input.valueAsNumber : NaN;
+  });
+  return values[0] <= values.at(-1) ? (values[0]+values.at(-1))/2 : NaN;
+}
+
+function drawStabilityPreview(drawing, angle, depth, columnDepth) {
+  // A fixed five-metre segment of the idealized slope gives the preview a length reference.
+  const radians = angle*Math.PI/180;
+  const run = 5*Math.cos(radians);
+  const rise = 5*Math.sin(radians);
+  const {x,y} = geometryFrame(run,rise+Math.max(depth,columnDepth));
+  const a=[x(0),y(rise)], b=[x(run),y(0)], c=[x(0),y(rise-depth)], d=[x(run),y(-depth)];
+  drawing.append(
+    element('polygon',{points:[a,b,d,c].join(' '),fill:'#c4ddd3'}),
+    element('polyline',{points:[a,b].join(' '),class:'slope-ground'}),
+    element('polyline',{points:[c,d].join(' '),class:'slope-failure'}),
+    element('line',{x1:a[0],y1:a[1],x2:c[0],y2:c[1],class:'slope-depth'})
+  );
+  if (columnDepth > 0) {
+    drawing.append(element('line',{x1:b[0],y1:b[1],x2:b[0],y2:y(-columnDepth),class:'slope-column'}));
+  }
+  const fmt = n=>geometryNumber.format(n);
+  return {dimensions:[fmt(angle)+'° slope',fmt(depth)+' m vertical failure depth',
+    ...(columnDepth ? [fmt(columnDepth)+' m column'] : [])].join(' · '),
+    legend:[['Ground surface','#153d39'],['Failure plane','#a4482c'],
+      ...(columnDepth ? [['OHQ column depth','#376888']] : [])],
+    note:columnDepth > 0 && depth > columnDepth ?
+      'Failure depth extends below the OHQ column.' :
+      'Illustrative 5 m segment along the slope. Failure depth is measured vertically.'};
+}
+
+function updateSlopePreview(activeDimension) {
+  const drawing = $('slope-drawing');
+  drawing.replaceChildren();
+  const section = isSection();
+  const sampling = $('mode').value === 'ensemble';
+  $('slope-mode').textContent = section ? '2D seepage grid' :
+    sampling ? 'Ensemble midpoint' : 'Stability geometry';
+  let preview;
+  let message;
+  if (section) {
+    message = 'Enter valid dimensions and material stacks to preview the section.';
+    let draft;
+    try { draft = JSON.parse($('section-json').value); } catch {}
+    for (const [id,key] of sectionDimensions) {
+      $(id).disabled = !draft || typeof draft !== 'object' || Array.isArray(draft);
+      if (activeDimension !== id) $(id).value = Number.isFinite(draft?.[key]) ? draft[key] : '';
+    }
+    const width = draft?.width_m, dz = draft?.cell_height_m, materials = draft?.materials;
+    const stacks = Array.isArray(draft?.columns) ? draft.columns.map(column=>column?.materials) : [];
+    if (Number.isFinite(width) && width >= .01 && width <= 1000 &&
+        Number.isFinite(dz) && dz >= .001 && dz <= 100 && materials &&
+        typeof materials === 'object' && !Array.isArray(materials) &&
+        stacks.length >= 2 && stacks.length <= 32 &&
+        stacks.every(stack=>Array.isArray(stack) && stack.length &&
+          stack.every(name=>typeof name === 'string' && Object.hasOwn(materials,name))) &&
+        stacks.reduce((sum,stack)=>sum+stack.length,0) <= 300) {
+      preview = drawSectionPreview(drawing,draft,stacks);
+    }
+  } else {
+    message = 'Enter a valid slope angle and failure depth to preview the section.';
+    const hydro = $('pressure-source').value === 'ohq_column';
+    const angle = stabilityGeometryValue('slope_deg',sampling);
+    const depth = stabilityGeometryValue('failure_depth_m',sampling && !hydro);
+    const column = $('column-depth_m');
+    const columnDepth = hydro && column.validity.valid ? column.valueAsNumber || 0 : 0;
+    if (Number.isFinite(angle) && Number.isFinite(depth)) {
+      preview = drawStabilityPreview(drawing,angle,depth,columnDepth);
+    }
+  }
+  $('slope').hidden = !preview;
+  $('slope-description').textContent = preview ? 'Slope section. '+preview.dimensions : 'Slope preview unavailable';
+  $('slope-dimensions').textContent = preview?.dimensions ?? '';
+  $('slope-note').textContent = preview?.note ?? message;
+  $('slope-legend').replaceChildren(...(preview?.legend ?? []).map(([label,color])=>{
+    const item = document.createElement('li');
+    const swatch = document.createElement('span');
+    swatch.style.backgroundColor = color;
+    item.append(swatch,label);
+    return item;
+  }));
+}
+
 function chart(rows) {
   const svg = $('chart'); svg.replaceChildren();
   const width=700, height=290, left=55, right=25, top=25, bottom=45;
@@ -313,6 +452,22 @@ $('rain-mode').onchange=rainfallChanged;
 $('stability-engine').onchange=()=>{stabilityEngineSelected=true;driverChanged();};
 $('mode').onchange=modeChanged;$('reset').onclick=reset;
 $('analysis').onchange=driverChanged;
+$('scenario').addEventListener('input', ({target}) => {
+  if (/^(slope_deg-|failure_depth_m-|column-depth_m$|section-json$)/.test(target.id)) updateSlopePreview();
+});
+for (const [id, key] of sectionDimensions) {
+  $(id).addEventListener('input', () => {
+    const control = $(id);
+    if (!control.validity.valid || !Number.isFinite(control.valueAsNumber)) {
+      $('slope-note').textContent = 'Enter a valid dimension to update the section.';
+      return;
+    }
+    const draft = JSON.parse($('section-json').value);
+    draft[key] = control.valueAsNumber;
+    $('section-json').value = JSON.stringify(draft, null, 2);
+    updateSlopePreview(id);
+  });
+}
 $('section-probe').onchange=()=>pressureChart(sectionProbes[$('section-probe').value], 'section-chart');
 $('pressure-source').onchange=()=>{if($('pressure-source').value==='ohq_column') {for(const field of ['value','min','max']) $('failure_depth_m-'+field).value=$('failure_depth_m-value').value;}driverChanged();};
 $('download').onclick=()=>{if(!exported)return;const url=URL.createObjectURL(new Blob([JSON.stringify(exported,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download=`slope-${exported.job.id}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
@@ -320,6 +475,7 @@ reset();
 api('/examples/seepage-2d.json').then(example=>{
   sectionExample = example;
   if (!$('section-json').value) $('section-json').value = JSON.stringify(example, null, 2);
+  if (isSection()) updateSlopePreview();
 }).catch(error=>{$('form-error').textContent=error.message;});
 api('/api/health').then(health=>{
   engineAvailable=health.ohq_hydrology_available;

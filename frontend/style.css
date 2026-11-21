@@ -5,3 +5,17 @@
 .check-label{display:flex;align-items:center;gap:10px}.check-label input{width:auto}#hydraulic-parameters td:first-child{min-width:100px}#hydraulic-parameters select{min-width:115px;font-size:.8rem;padding:8px}
 
 #stability-inputs{min-inline-size:0;margin:0;padding:0;border:0}#section-chart{width:100%;display:block}
+
+.visual #slope{background:#f5f8f7;border:1px solid var(--line);border-radius:8px}
+.slope-ground,.slope-failure,.slope-depth,.slope-column{fill:none;vector-effect:non-scaling-stroke}
+.slope-ground{stroke:#153d39;stroke-width:2.5;stroke-linejoin:round}
+.slope-failure,.slope-depth{stroke:#a4482c;stroke-width:1.5}
+.slope-failure{stroke-dasharray:6 4}
+.slope-column{stroke:#376888;stroke-width:2;stroke-dasharray:3 3}
+.slope-cell{stroke:#fff;stroke-width:.65;vector-effect:non-scaling-stroke}
+.slope-probe{fill:#a4482c;stroke:#fff;stroke-width:1.5}
+.slope-dimensions{font-size:.95rem;font-weight:650;margin:13px 0 8px}
+.slope-legend{display:flex;flex-wrap:wrap;gap:6px 16px;list-style:none;padding:0;margin:0;color:var(--muted);font-size:.83rem}
+.slope-legend li{display:flex;align-items:center;gap:6px}
+.slope-legend span{width:10px;height:10px;border-radius:2px}
+.slope-legend:empty,.slope-dimensions:empty{display:none}
