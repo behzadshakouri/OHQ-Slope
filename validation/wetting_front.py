@@ -6,7 +6,8 @@ import math
 from pathlib import Path
 
 from hydrology.column import ROOT
-from validation.column_sensitivity import metrics
+from validation.column_sensitivity import metrics, sample_profile
+from validation.ponding import reference
 
 BENCHMARK = ROOT / 'models/wetting_front_benchmark.json'
 THETA_INCREMENT = 0.02
@@ -84,17 +85,46 @@ def assess(study):
                 comparisons=comparisons)
 
 
+def compare_independent(study):
+    """Repeat the benchmark with the same discrete laws in the Python solver."""
+    independent_trials = []
+    matched = []
+    for trial in study['trials']:
+        spec = trial['specification']
+        points = study['study']['points']
+        hydro = reference(spec['cells'], spec['solver_step_h'] / 24, spec=spec,
+                          surface_boundary='reviewed_infiltration',
+                          failure_depth_m=points[0]['vertical_depth_m'])
+        extracted = {p['id']: sample_profile(hydro, p['vertical_depth_m']) for p in points}
+        independent_trials.append(dict(trial, hydrology=hydro, extracted=extracted))
+        matched.append({
+            'cells': spec['cells'],
+            'maximum_step_s': spec['solver_step_h'] * 3600,
+            'reference_steps': hydro['steps'],
+            'points': {point: compare_points(native, extracted[point])
+                       for point, native in trial['extracted'].items()},
+        })
+    result = assess(dict(study, trials=independent_trials))
+    return {'reference_assessment': result, 'matched_native_reference': matched,
+            'scope': 'Same discrete laws and maximum time steps. Internal step placement may differ.'}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('study', type=Path)
     parser.add_argument('--output', type=Path, default=Path('results/wetting-front-assessment.json'))
     parser.add_argument('--require-pass', action='store_true')
+    parser.add_argument('--independent', action='store_true',
+                        help='Run the independent finite-volume solver at matching grids and steps.')
     args = parser.parse_args()
     if args.output.resolve() in (args.study.resolve(), BENCHMARK.resolve()):
         parser.error('Output must differ from the study and benchmark inputs.')
     try:
         data = args.study.read_bytes()
-        result = assess(json.loads(data))
+        study = json.loads(data)
+        result = assess(study)
+        if args.independent:
+            result['independent'] = compare_independent(study)
         result['study_sha256'] = hashlib.sha256(data).hexdigest()
     except (OSError, ValueError, KeyError, TypeError) as error:
         result = dict(state='failed', message=str(error), field_validated=False, fs_computed=False)

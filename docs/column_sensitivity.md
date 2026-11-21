@@ -131,3 +131,17 @@ It records each member's size and ZIP CRC. Steps with a standard
 `NNN/node.csv` table are also listed. Analysis folder names are archive labels
 and do not establish which analyses OHQ can reproduce. The point reader above
 provides numerical interpretation for its supported variables.
+
+To distinguish implementation differences from discretization sensitivity, run
+the same six cases with the independent Python finite-volume integrator:
+
+```sh
+python3 -m validation.wetting_front results/wetting-front-benchmark.json --independent --output results/wetting-front-independent.json
+```
+
+The report includes an independent assessment and native-versus-reference
+differences at both extraction depths. Both solvers use the same discrete
+constitutive and boundary laws and maximum steps. This comparison checks the
+implementation and does not establish continuum accuracy. In the synthetic
+case, both solvers reproduced the same pressure sensitivity (0.166 m spatial,
+0.0262 m temporal).
