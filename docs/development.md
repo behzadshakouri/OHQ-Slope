@@ -47,6 +47,33 @@ boundary, process, diagnostic or calibration tool.
 | Water quality and thermal processes | Start with native mass-transfer templates, reaction cases and the upstream Thermal Discharge Pond example. | Verify the specific porous-media transport and boundary equations before extending to heat, air or contaminants in a slope. |
 | Calibration and uncertainty | Evaluate the pinned OHQ-LM, OHQ-GA and OHQ-MCMC tools when their objective and inference assumptions fit the task. | Verify tool builds, parameter binding and reproducibility. The current forward Monte Carlo orchestrator is a separate workflow and requires equivalent sampling and output checks before replacement. |
 
+### Native calibration smoke test
+
+The pinned OHQ-LM executable was built from its upstream qmake project and
+tested on the supplied synthetic Monod reactor. From the repository root,
+with Qt 6 qmake and the native math libraries installed:
+
+```sh
+repo="$PWD"
+work=$(mktemp -d)
+mkdir "$work/build" "$work/case"
+cp "$repo/OpenHydroQual/Examples/LM_Calibration/02_Monod_Reactor/"*.ohq "$work/case/"
+cp "$repo/OpenHydroQual/Examples/LM_Calibration/02_Monod_Reactor/"*.txt "$work/case/"
+cp "$repo/OpenHydroQual/Examples/LM_Calibration/02_Monod_Reactor/"*.csv "$work/case/"
+cd "$work/build"
+qmake6 "$repo/OpenHydroQual/terminal/OHQ-LM/OHQ-LM.pro" "OHQ=$repo/OpenHydroQual" CONFIG+=release
+make -j4
+cd "$work/case"
+OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 ../build/OHQ-LM calibration.ohq . --threads 1
+```
+
+The native run converged after 11 iterations and 64 forward solves. The
+three fitted parameters were within 9% of their known values. The nominal
+95% interval for `p_k_B` excluded its true value of 0.5. The test demonstrates
+the build, executable, parameter binding and outputs on an upstream synthetic
+case. A slope calibration still requires a verified observation objective,
+parameter bounds and an explicit check of interval behavior.
+
 ### Retrospective audit
 
 - `d652add` pinned OHQ at project initialization. `7a593f2` introduced the native
