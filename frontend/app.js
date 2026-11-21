@@ -377,7 +377,100 @@ function pressureChart(rows, chartId = 'pressure-chart') {
   svg.append(element('text',{x:left,y:13},'Pressure head (m)'));
   svg.append(element('text',{x:350,y:225,'text-anchor':'middle'},'Time (hours)'));
 }
+const animationFields = {
+  theta:{label:'Water content',unit:'m³/m³'},
+  pressure_head_m:{label:'Pressure head',unit:'m'},
+};
+let animation = null, animationTimer = null;
+
+function pauseAnimation() {
+  if (animationTimer !== null) clearInterval(animationTimer);
+  animationTimer = null;
+  $('animation-play').textContent = 'Play';
+}
+
+function initializeAnimation(hydro) {
+  pauseAnimation();
+  const {histories, column_cells:counts, x_edges_m:edges, cell_height_m:dz} = hydro;
+  const frames = histories?.[0]?.length ?? 0;
+  $('section-animation').hidden = !frames || !counts || !edges || !dz;
+  animation = null;
+  if ($('section-animation').hidden) return;
+
+  const {x,y} = geometryFrame(edges.at(-1)-edges[0],Math.max(...counts)*dz);
+  const grid = $('animation-grid');
+  grid.replaceChildren();
+  const cells = counts.map((count,i)=>Array.from({length:count},(_,j)=>{
+    const left = edges[i]-edges[0], right = edges[i+1]-edges[0];
+    const rect = element('rect',{x:x(left),y:y((count-j)*dz),
+      width:x(right)-x(left),height:y(0)-y(dz),class:'animation-cell'});
+    const title = element('title',{});
+    rect.append(title);
+    grid.append(rect);
+    return {rect,title};
+  }));
+  const ranges = {};
+  for (const key of Object.keys(animationFields)) {
+    let low = Infinity, high = -Infinity;
+    for (const history of histories) for (const frame of history) {
+      low = Math.min(low,...frame[key]);
+      high = Math.max(high,...frame[key]);
+    }
+    ranges[key] = {low,high};
+  }
+  animation = {histories,cells,ranges};
+  $('animation-frame').max = frames-1;
+  $('animation-frame').value = 0;
+  $('animation-frame').disabled = $('animation-play').disabled = frames < 2;
+  drawAnimationFrame();
+}
+
+function drawAnimationFrame() {
+  if (!animation) return;
+  const slider = $('animation-frame');
+  const index = Number(slider.value);
+  const key = $('animation-field').value;
+  const {label,unit} = animationFields[key];
+  const {histories,cells,ranges} = animation;
+  const {low,high} = ranges[key];
+  const fmt = value=>Number(value.toPrecision(4)).toString();
+  $('animation-low').textContent = fmt(low)+' '+unit;
+  $('animation-high').textContent = fmt(high)+' '+unit;
+  const time = fmt(histories[0][index].time_h)+' h';
+  $('animation-time').textContent = time;
+  slider.setAttribute('aria-valuetext',time);
+  $('animation-grid').setAttribute('aria-label',label+' across the section at '+time);
+  cells.forEach((column,i)=>column.forEach(({rect,title},j)=>{
+    const value = histories[i][index][key][j];
+    const fraction = high === low ? .5 : (value-low)/(high-low);
+    const pale = [239,246,235], dark = [19,75,124];
+    const rgb = pale.map((channel,k)=>Math.round(channel+fraction*(dark[k]-channel)));
+    rect.setAttribute('fill','rgb('+rgb.join(',')+')');
+    title.textContent = 'Column '+(i+1)+', layer '+(j+1)+': '+fmt(value)+' '+unit;
+  }));
+}
+
+function toggleAnimation() {
+  if (animationTimer !== null) {
+    pauseAnimation();
+    return;
+  }
+  const slider = $('animation-frame');
+  if (!animation || slider.disabled) return;
+  if (Number(slider.value) === Number(slider.max)) {
+    slider.value = 0;
+    drawAnimationFrame();
+  }
+  $('animation-play').textContent = 'Pause';
+  animationTimer = setInterval(()=>{
+    slider.value = Number(slider.value)+1;
+    drawAnimationFrame();
+    if (Number(slider.value) >= Number(slider.max)) pauseAnimation();
+  },180);
+}
+
 function showResult(data) {
+  pauseAnimation();
   const section = data.analysis === 'seepage_2d';
   $('result-heading').textContent = section ? '2D seepage results' : 'Factor of safety';
   $('section-result').hidden = !section;
@@ -385,6 +478,7 @@ function showResult(data) {
     $('empty').hidden = $('result').hidden = true;
     sectionProbes = data.probes;
     const hydro = data.hydrology;
+    initializeAnimation(hydro);
     const volume = hydro.outlet_history.at(-1);
     $('section-budget').textContent =
       `Rainfall: ${data.rainfall_total_m3.toPrecision(4)} m³. Runoff: ${volume.cumulative_runoff_m3.toPrecision(4)} m³. Reviewed excess: ${volume.cumulative_surface_excess_m3.toPrecision(4)} m³. Seepage: ${volume.cumulative_discharge_m3.toPrecision(4)} m³. Maximum balance residual: ${hydro.water_balance_max_residual_m3.toExponential(2)} m³.`;
@@ -434,6 +528,7 @@ async function history() {
   }
 }
 async function openJob(id) {
+  pauseAnimation();
   clearTimeout(timer); const version=++viewVersion;currentJob=id;exported=null;$('download').disabled=true;
   $('section-result').hidden=true;$('result').hidden=true;$('empty').hidden=false;
   $('empty').firstElementChild.textContent='Waiting for results from this run.';
@@ -486,6 +581,9 @@ for (const [id, key] of sectionDimensions) {
     updateSlopePreview(id);
   });
 }
+$('animation-play').onclick=toggleAnimation;
+$('animation-field').onchange=drawAnimationFrame;
+$('animation-frame').oninput=()=>{pauseAnimation();drawAnimationFrame();};
 $('section-probe').onchange=()=>pressureChart(sectionProbes[$('section-probe').value], 'section-chart');
 $('pressure-source').onchange=()=>{if($('pressure-source').value==='ohq_column') {for(const field of ['value','min','max']) $('failure_depth_m-'+field).value=$('failure_depth_m-value').value;}driverChanged();};
 $('download').onclick=()=>{if(!exported)return;const url=URL.createObjectURL(new Blob([JSON.stringify(exported,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download=`slope-${exported.job.id}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
