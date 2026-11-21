@@ -54,3 +54,25 @@ the two finest steps is 1.71 mm at the final saved time.
 This is a standalone numerical reference. Integrating it with the OHQ app,
 adding Richards-equation unsaturated storage and conductivity, and validating
 rainfall/runoff partitioning over a sloping boundary are later modeling stages.
+
+## Native OHQ implementation path
+
+The pinned OpenHydroQual templates already include `Soil`, the horizontal
+`soil_to_soil_H_link` with explicit face area and length, the vertical
+`soil_to_soil_link`, surface-to-soil infiltration links, and
+`soil_free_outflow`, whose flux is proportional to positive source pressure.
+The upstream Drywell example uses the horizontal connector in a soil network.
+Build the production section using native soil blocks and connectors. Use
+this Python solver as an independent verification reference.
+
+The native horizontal diffusion check exercises the stock connector with
+`Kx/Kz = 2` and compares it with analytical small-amplitude decay:
+
+```sh
+python3 -m validation.diffusion --horizontal --output results/native-ohq-horizontal-diffusion.json
+```
+
+A native slope mesh must still match connector elevations, conductivities,
+interface dimensions and outlet boundary placement. The closed horizontal
+benchmark checks one connector direction. It does not verify those choices
+for the full 2D rainfall and seepage-face case.

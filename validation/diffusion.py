@@ -20,22 +20,26 @@ def constitutive(psi, alpha=1.5, n=1.6, theta_res=.05, theta_sat=.4, ksat=.5, co
     return theta,capacity,conductivity
 
 
-def benchmark(folder, cells=16, step_days=.0002):
+def benchmark(folder, cells=16, step_days=.0002, *, horizontal=False):
     folder=Path(folder).resolve();folder.mkdir(parents=True,exist_ok=True)
     length=1.;base=-1.;amplitude=.001;duration=.2
     _,capacity,conductivity=constitutive(base)
-    diffusivity=conductivity/capacity
-    dz=length/cells
-    positions=[(i+.5)*dz for i in range(cells)]
+    anisotropy = 2. if horizontal else 1.
+    diffusivity = conductivity * anisotropy / capacity
+    spacing = length / cells
+    positions = [(i + .5) * spacing for i in range(cells)]
+    area, depth = (spacing, 1.) if horizontal else (1., spacing)
+    link = 'soil_to_soil_H_link' if horizontal else 'soil_to_soil_link'
+    link_geometry = f',area=1,length={spacing}' if horizontal else ''
     initial=[base+amplitude*math.cos(math.pi*x/length) for x in positions]
     lines=[f'loadtemplate;filename={ENGINE}/resources/main_components.json',
            f'addtemplate;filename={ENGINE}/resources/unsaturated_soil.json']
     for i,psi in enumerate(initial):
         theta,_,_=constitutive(psi)
         # All representative elevations are zero: horizontal diffusion only.
-        lines.append(f'create block;type=Soil,name=Cell{i},area=1,depth={dz},bottom_elevation={-dz},theta={theta:.17g},theta_res=0.05,theta_sat=0.4,alpha=1.5,n=1.6,L=0.5,K_sat_original=0.5,K_sat_scale_factor=1,specific_storage=0.01,aniso_ratio=1')
+        lines.append(f'create block;type=Soil,name=Cell{i},area={area},depth={depth},bottom_elevation={-depth},theta={theta:.17g},theta_res=0.05,theta_sat=0.4,alpha=1.5,n=1.6,L=0.5,K_sat_original=0.5,K_sat_scale_factor=1,specific_storage=0.01,aniso_ratio={anisotropy}')
         lines.append(f'create observation;type=Observation,name=pressure_{i},object=Cell{i},expression=pressure_head,observed_data=,error_structure=normal,error_standard_deviation=1')
-        if i:lines.append(f'create link;type=soil_to_soil_link,from=Cell{i-1},to=Cell{i},name=Diffusion{i}')
+        if i:lines.append(f'create link;type={link},from=Cell{i-1},to=Cell{i},name=Diffusion{i}{link_geometry}')
     settings={'simulation_start_time':0,'simulation_end_time':duration,'initial_time_step':step_days,
               'max_timestep_increase_factor':1,'minimum_timestep':1e-10,'nr_tolerance':1e-10,
               'maximum_time_allowed':120,'make_timeseries_uniform':'No','record_results':'No',
@@ -46,7 +50,7 @@ def benchmark(folder, cells=16, step_days=.0002):
     simulated=[observations[f'pressure_{i}'][-1][1] for i in range(cells)]
     exact=[base+amplitude*math.cos(math.pi*x/length)*math.exp(-diffusivity*math.pi**2*duration/length**2) for x in positions]
     error=max(abs(a-b) for a,b in zip(simulated,exact))
-    return {'cells':cells,'step_days':step_days,'duration_days':duration,'diffusivity_m2_day':diffusivity,
+    return {'cells':cells,'connector':link,'anisotropy_ratio':anisotropy,'step_days':step_days,'duration_days':duration,'diffusivity_m2_day':diffusivity,
             'amplitude_m':amplitude,'maximum_head_error_m':error,
             'relative_to_initial_amplitude':error/amplitude,
             'scope':'Small-amplitude unsaturated diffusion; not full nonlinear rainfall infiltration.'}
@@ -57,9 +61,10 @@ def main():
     import json
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output',type=Path,default=Path('results/diffusion-check.json'))
+    parser.add_argument('--horizontal', action='store_true', help='Use the native horizontal connector with Kx/Kz = 2.')
     args=parser.parse_args()
     folder=args.output.parent/(args.output.stem+'_files')
-    results=[benchmark(folder/str(n),n) for n in (8,16,32)]
+    results=[benchmark(folder/str(n),n,horizontal=args.horizontal) for n in (8,16,32)]
     args.output.parent.mkdir(parents=True,exist_ok=True)
     args.output.write_text(json.dumps({'checks':results,'reference':'Linearized Richards cosine-decay solution derived in docs/verification.md.'},indent=2)+'\n')
     for result in results:print(f"{result['cells']} cells: maximum head error {result['maximum_head_error_m']:.6g} m")
