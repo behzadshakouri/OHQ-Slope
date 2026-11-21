@@ -62,3 +62,23 @@ stability solve is a separate check of method and discretization.
 Once the FS template is populated, run
 `python3 -m validation.geostudio_compare_exports bishop_fs.csv geostudio_fs.csv`
 to report FS differences and winning circle IDs at every saved time.
+
+### First-run check for C01
+
+The updated checker accepts a C01-only export. Copy the raw SLOPE/W slice
+values into the normalized template, numbering slices from left to right.
+Retain the raw files for checking slice positions and angle convention.
+Use the original 25 elapsed times in hours without rounding them in the
+CSV. A different number or arrangement of slices requires inspection
+before differences can be attributed to the pressure or stability solver.
+
+```sh
+python -m validation.geostudio_compare_exports bishop_fs.csv populated_geostudio_fs.csv \
+  --circle C01 --count 60 --slice-export populated_geostudio_slices.csv \
+  --slice-geometry slices.csv --slice-pressures slice_pressures.csv
+```
+
+The slice report gives bias, RMSE, maximum absolute difference, and the
+time and slice number of the largest difference for each field. Slice
+differences are GeoStudio export minus replay. FS differences retain
+the signs shown in their output field names.
