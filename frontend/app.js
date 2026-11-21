@@ -338,7 +338,7 @@ function chart(rows) {
   const width=700, height=290, left=55, right=25, top=25, bottom=45;
   const start=rows[0].time_h, end=rows.at(-1).time_h;
   const maximum=Math.max(1.2, ...rows.map(row=>row.p95))*1.12;
-  const x=t=>left+(t-start)/(end-start)*(width-left-right);
+  const x=t=>end===start ? (left+width-right)/2 : left+(t-start)/(end-start)*(width-left-right);
   const y=v=>height-bottom-v/maximum*(height-top-bottom);
   for(let i=0;i<=4;i++) {
     const value=maximum*i/4;
@@ -355,12 +355,14 @@ function chart(rows) {
   svg.append(element('path',{d:path('median'),fill:'none',stroke:'#215c52','stroke-width':3}));
   svg.append(element('text',{x:width/2,y:height-5,'text-anchor':'middle'},'Time (hours)'));
   svg.append(element('text',{x:15,y:18},'FS'));
+  return chartCursor(svg,x,y,top,height-bottom);
 }
 function pressureChart(rows, chartId = 'pressure-chart') {
   const svg=$(chartId);svg.replaceChildren();
   const left=55,right=675,top=20,bottom=185;
   const low=Math.min(0,...rows.map(row=>row.pressure_p05_m??row.pressure_head_m)), high=Math.max(0.1,...rows.map(row=>row.pressure_p95_m??row.pressure_head_m));
-  const x=t=>left+(t-rows[0].time_h)/(rows.at(-1).time_h-rows[0].time_h)*(right-left);
+  const start=rows[0].time_h, end=rows.at(-1).time_h;
+  const x=t=>end===start ? (left+right)/2 : left+(t-start)/(end-start)*(right-left);
   const y=v=>bottom-(v-low)/(high-low)*(bottom-top);
   for(let i=0;i<=4;i++) {const value=low+(high-low)*i/4;
     svg.append(element('line',{x1:left,y1:y(value),x2:right,y2:y(value),stroke:'#e4eae7'}));
@@ -376,6 +378,20 @@ function pressureChart(rows, chartId = 'pressure-chart') {
   svg.append(element('path',{d:rows.map((row,i)=>`${i?'L':'M'}${x(row.time_h)},${y(row.pressure_head_m)}`).join(' '),fill:'none',stroke:'#376e96','stroke-width':3}));
   svg.append(element('text',{x:left,y:13},'Pressure head (m)'));
   svg.append(element('text',{x:350,y:225,'text-anchor':'middle'},'Time (hours)'));
+  if (chartId === 'pressure-chart') return chartCursor(svg,x,y,top,bottom);
+}
+
+function chartCursor(svg,x,y,top,bottom) {
+  const line = element('line',{y1:top,y2:bottom,class:'playback-cursor'});
+  const point = element('circle',{r:4,class:'playback-point'});
+  svg.append(line,point);
+  return (time,value)=>{
+    const position = x(time);
+    line.setAttribute('x1',position);
+    line.setAttribute('x2',position);
+    point.setAttribute('cx',position);
+    point.setAttribute('cy',y(value));
+  };
 }
 const animationFields = {
   theta:{label:'Water content',unit:'m³/m³'},
@@ -386,7 +402,7 @@ let animation = null, animationTimer = null;
 function pauseAnimation() {
   if (animationTimer !== null) clearInterval(animationTimer);
   animationTimer = null;
-  $('animation-play').textContent = 'Play';
+  $('animation-play').textContent = $('stability-play').textContent = 'Play';
 }
 
 function initializeAnimation(hydro) {
@@ -450,23 +466,39 @@ function drawAnimationFrame() {
   }));
 }
 
-function toggleAnimation() {
+function togglePlayback(slider, button, draw) {
   if (animationTimer !== null) {
     pauseAnimation();
     return;
   }
-  const slider = $('animation-frame');
-  if (!animation || slider.disabled) return;
+  if (slider.disabled) return;
   if (Number(slider.value) === Number(slider.max)) {
     slider.value = 0;
-    drawAnimationFrame();
+    draw();
   }
-  $('animation-play').textContent = 'Pause';
+  button.textContent = 'Pause';
   animationTimer = setInterval(()=>{
     slider.value = Number(slider.value)+1;
-    drawAnimationFrame();
+    draw();
     if (Number(slider.value) >= Number(slider.max)) pauseAnimation();
   },180);
+}
+
+let stabilityPlayback = null;
+
+function drawStabilityFrame() {
+  if (!stabilityPlayback) return;
+  const {rows,ensemble,stabilityCursor,pressureCursor} = stabilityPlayback;
+  const slider = $('stability-frame');
+  const {time_h,median,p05,p95,pressure_head_m} = rows[Number(slider.value)];
+  const time = Number(time_h.toPrecision(5))+' h';
+  const fs = ensemble ? 'Median FS '+median.toFixed(3)+' (5–95%: '+p05.toFixed(3)+'–'+p95.toFixed(3)+')' :
+    'FS '+median.toFixed(3);
+  $('stability-time').textContent = time;
+  slider.setAttribute('aria-valuetext',time);
+  $('stability-frame-values').textContent = fs+' · '+(ensemble ? 'Median pressure head ' : 'Pressure head ')+pressure_head_m.toFixed(3)+' m';
+  stabilityCursor(time_h,median);
+  if (pressureCursor) pressureCursor(time_h,pressure_head_m);
 }
 
 function showResult(data) {
@@ -500,12 +532,19 @@ function showResult(data) {
   $('count').textContent = data.samples.toLocaleString();
   $('chart-note').textContent = data.hydraulic_uncertainty_sampled ? 'Solid lines: pointwise medians; shading: 5–95% ranges. Each realization has its own OHQ pressure history. Hydraulic and mechanical inputs are independent.' : ensemble ? 'Solid line: median FS. Shading: 5–95% range. Independent uniform mechanical uncertainty; pressure history held fixed.' : data.ohq_hydrology_used ? 'Fixed mechanical inputs with OHQ-simulated pressure. FS evaluated at the selected output times.' : 'Fixed mechanical inputs with prescribed pressure. FS evaluated at supplied times.';
   if(data.stability_engine==='ohq_json') $('chart-note').textContent+=' FS calculated by the OHQ JSON component and checked against Python.';
-  chart(data.series);
+  const stabilityCursor = chart(data.series);
+  let pressureCursor;
   $('hydrology-result').hidden=!data.ohq_hydrology_used;
   if(data.ohq_hydrology_used) {
     $('water-balance').textContent=`Rainfall total: ${(data.hydrology.rainfall_total_m*1000).toFixed(1)} mm. Maximum water-balance residual: ${data.hydrology.water_balance_max_residual_m3.toExponential(2)} m³ over 1 m², across ${data.hydrology.realizations??1} OHQ run(s). Base: ${data.hydrology.specification.base==='sealed'?'sealed':'unit-gradient drainage'}. Formulation: ${data.hydrology.formulation==='cell_centred'?'cell-centred':'legacy top-reference'}.`;
-    pressureChart(data.series);
+    pressureCursor = pressureChart(data.series);
   }
+  stabilityPlayback = {rows:data.series,ensemble,stabilityCursor,pressureCursor};
+  const slider = $('stability-frame');
+  slider.max = data.series.length-1;
+  slider.value = 0;
+  slider.disabled = $('stability-play').disabled = data.series.length < 2;
+  drawStabilityFrame();
   $('series').replaceChildren();
   for (const row of data.series) {
     const tr=document.createElement('tr');
@@ -581,7 +620,9 @@ for (const [id, key] of sectionDimensions) {
     updateSlopePreview(id);
   });
 }
-$('animation-play').onclick=toggleAnimation;
+$('animation-play').onclick=()=>togglePlayback($('animation-frame'),$('animation-play'),drawAnimationFrame);
+$('stability-play').onclick=()=>togglePlayback($('stability-frame'),$('stability-play'),drawStabilityFrame);
+$('stability-frame').oninput=()=>{pauseAnimation();drawStabilityFrame();};
 $('animation-field').onchange=drawAnimationFrame;
 $('animation-frame').oninput=()=>{pauseAnimation();drawAnimationFrame();};
 $('section-probe').onchange=()=>pressureChart(sectionProbes[$('section-probe').value], 'section-chart');

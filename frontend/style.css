@@ -33,3 +33,7 @@
 .animation-controls button,.animation-controls output{min-width:4em}
 .animation-controls output{text-align:right}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.playback-cursor,.playback-point{stroke:#20465b;stroke-width:1.5;vector-effect:non-scaling-stroke}
+.playback-cursor{stroke-dasharray:4 4}
+.playback-point{fill:#fff}
+.stability-playback{padding-bottom:8px}
