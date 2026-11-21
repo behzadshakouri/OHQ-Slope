@@ -37,3 +37,5 @@
 .playback-cursor{stroke-dasharray:4 4}
 .playback-point{fill:#fff}
 .stability-playback{padding-bottom:8px}
+#section-uq-inputs,#section-mcmc-inputs{min-inline-size:0;margin:18px 0 0;padding:0;border:0}
+#section-uq-inputs legend,#section-mcmc-inputs legend{font-weight:650}

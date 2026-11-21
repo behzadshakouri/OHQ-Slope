@@ -74,17 +74,29 @@ function advancedInputs() {
     wrapper.append(text,input);$('column-advanced').append(wrapper);
   }
 }
-const isSection = () => $('analysis').value === 'seepage_2d';
+const sectionAnalyses = {
+  seepage_2d:'2D seepage results',
+  seepage_2d_uncertainty:'2D uncertainty results',
+  seepage_2d_mcmc:'2D MCMC calibration results',
+};
+const selectedAnalysis = () => $('analysis').value;
+const isSection = () => Object.hasOwn(sectionAnalyses,selectedAnalysis());
+const isMcmc = () => selectedAnalysis() === 'seepage_2d_mcmc';
+let mcmcAvailable = false;
 let sectionExample = null;
-let sectionProbes = null;
+let sectionSeries = null;
+let sectionResultAnalysis;
 
 function driverChanged() {
   const section = isSection();
   $('stability-inputs').hidden = $('stability-inputs').disabled = section;
   $('section-inputs').hidden = !section;
+  const uq = selectedAnalysis() === 'seepage_2d_uncertainty';
+  $('section-uq-inputs').hidden = $('section-uq-inputs').disabled = !uq;
+  $('section-mcmc-inputs').hidden = $('section-mcmc-inputs').disabled = !isMcmc();
   if (!section) for (const [id] of sectionDimensions) $(id).disabled = true;
   if (!currentJob) {
-    $('result-heading').textContent = section ? '2D seepage results' : 'Factor of safety';
+    $('result-heading').textContent = section ? sectionAnalyses[selectedAnalysis()] : 'Factor of safety';
     $('empty-prompt').textContent = section ? 'Run a scenario to see its pressure and water balance.' :
       'Run a scenario to see its stability response.';
     $('empty-help').hidden = section;
@@ -93,10 +105,14 @@ function driverChanged() {
   $('column-inputs').hidden=!hydro;$('prescribed-inputs').hidden=hydro;
   document.querySelectorAll('#column-inputs input,#column-inputs select,#column-inputs textarea').forEach(node=>{node.disabled=!hydro;});
   $('pressure').disabled=hydro;
-  $('driver-title').textContent=section?'Native OHQ 2D seepage':hydro?'OHQ rainfall column':'Reference calculation';
-  $('driver-note').textContent=section?'Run a configured soil section and inspect its pressure response and water balance.':hydro?'Prototype column: one OHQ run supplies pressure. Hydraulic inputs and failure depth are fixed; transient grid sensitivity remains.':'Pressure is supplied by you; no hydrologic simulation is used.';
+  $('driver-title').textContent=isMcmc()?'Native OHQ-MCMC':uq?'Native OHQ uncertainty':section?'Native OHQ 2D seepage':hydro?'OHQ rainfall column':'Reference calculation';
+  $('driver-note').textContent=isMcmc()?'Fit one material’s saturated conductivity to pressure-head observations.':
+    uq?'Repeat the section solve with sampled hydraulic parameters.':
+    section?'Run a configured soil section and inspect its pressure response and water balance.':hydro?'Prototype column: one OHQ run supplies pressure. Hydraulic inputs and failure depth are fixed; transient grid sensitivity remains.':'Pressure is supplied by you; no hydrologic simulation is used.';
   $('engine-status').textContent=engineAvailable?'OHQ console built and available.': 'OHQ is not built. Use Python reference with prescribed pressure, or build the console; see the README.';
-  $('submit').disabled=(section||hydro||$('stability-engine').value==='ohq_json')&&!engineAvailable;
+  if (isMcmc() && !mcmcAvailable) $('engine-status').textContent = 'Native OHQ-MCMC unavailable. Build it and set OHQ_MCMC_BINARY before starting the dashboard.';
+  $('submit').disabled=((section||hydro||$('stability-engine').value==='ohq_json')&&!engineAvailable) ||
+    (isMcmc()&&!mcmcAvailable);
   rainfallChanged();
   if (!section) modeChanged();
   else updateSlopePreview();
@@ -145,7 +161,16 @@ function reset() {
   $('samples').value = '2000'; $('seed').value = '42';formulationChanged(); driverChanged(); $('form-error').textContent = '';
 }
 function scenario() {
-  if (isSection()) return {analysis: 'seepage_2d', section: JSON.parse($('section-json').value)};
+  if (isSection()) {
+    const analysis = selectedAnalysis();
+    const request = {analysis,section:JSON.parse($('section-json').value)};
+    if (analysis === 'seepage_2d_uncertainty') Object.assign(request,{
+      ranges:JSON.parse($('section-ranges').value),samples:$('section-samples').valueAsNumber,
+      seed:$('section-seed').valueAsNumber,
+    });
+    if (analysis === 'seepage_2d_mcmc') request.calibration = JSON.parse($('section-calibration').value);
+    return request;
+  }
   const parameters = {};
   for (const [key] of definitions) {
     parameters[key] = Object.fromEntries(['value', 'min', 'max'].map(field => [field, Number($(`${key}-${field}`).value)]));
@@ -357,8 +382,9 @@ function chart(rows) {
   svg.append(element('text',{x:15,y:18},'FS'));
   return chartCursor(svg,x,y,top,height-bottom);
 }
-function pressureChart(rows, chartId = 'pressure-chart') {
+function pressureChart(rows, chartId = 'pressure-chart', quantity = 'Pressure head (m)', axis = 'Time (hours)') {
   const svg=$(chartId);svg.replaceChildren();
+  svg.setAttribute('aria-label',quantity+' by '+axis.toLowerCase());
   const left=55,right=675,top=20,bottom=185;
   const low=Math.min(0,...rows.map(row=>row.pressure_p05_m??row.pressure_head_m)), high=Math.max(0.1,...rows.map(row=>row.pressure_p95_m??row.pressure_head_m));
   const start=rows[0].time_h, end=rows.at(-1).time_h;
@@ -376,8 +402,8 @@ function pressureChart(rows, chartId = 'pressure-chart') {
     svg.append(element('path',{d:upper+' '+lower+' Z',fill:'#dceaf4'}));
   }
   svg.append(element('path',{d:rows.map((row,i)=>`${i?'L':'M'}${x(row.time_h)},${y(row.pressure_head_m)}`).join(' '),fill:'none',stroke:'#376e96','stroke-width':3}));
-  svg.append(element('text',{x:left,y:13},'Pressure head (m)'));
-  svg.append(element('text',{x:350,y:225,'text-anchor':'middle'},'Time (hours)'));
+  svg.append(element('text',{x:left,y:13},quantity));
+  svg.append(element('text',{x:350,y:225,'text-anchor':'middle'},axis));
   if (chartId === 'pressure-chart') return chartCursor(svg,x,y,top,bottom);
 }
 
@@ -501,27 +527,64 @@ function drawStabilityFrame() {
   if (pressureCursor) pressureCursor(time_h,pressure_head_m);
 }
 
-function showResult(data) {
-  pauseAnimation();
-  const section = data.analysis === 'seepage_2d';
-  $('result-heading').textContent = section ? '2D seepage results' : 'Factor of safety';
-  $('section-result').hidden = !section;
-  if (section) {
-    $('empty').hidden = $('result').hidden = true;
-    sectionProbes = data.probes;
+function drawSectionResultChart() {
+  const rows = sectionSeries[$('section-probe').value];
+  if (sectionResultAnalysis === 'seepage_2d_mcmc') {
+    pressureChart(rows,'section-chart','Saturated conductivity (m/day)','Native sample index');
+  } else {
+    pressureChart(rows,'section-chart');
+  }
+}
+
+function showSectionResult(data) {
+  sectionResultAnalysis = data.analysis;
+  const mcmc = data.analysis === 'seepage_2d_mcmc';
+  const uq = data.analysis === 'seepage_2d_uncertainty';
+  $('section-animation').hidden = mcmc || uq;
+  $('section-probe-label').textContent = mcmc ? 'Chain' : 'Pressure probe';
+  const note = $('section-result-note');
+  if (mcmc) {
+    const {p05,median,p95} = data.ksat_m_day;
+    $('section-budget').textContent = data.material+' · '+data.samples+' retained samples · Median Ksat '+
+      median.toPrecision(4)+' m/day · 5–95% sample range '+p05.toPrecision(4)+'–'+p95.toPrecision(4)+' m/day';
+    note.textContent = 'Inspect both traces and assess convergence before interpreting the retained samples.';
+    sectionSeries = Object.fromEntries([1,2].map(id=>['Chain '+id,
+      data.chain.filter(row=>row.chain===id).map(row=>({time_h:row.sample,pressure_head_m:row.ksat_m_day}))]));
+  } else if (uq) {
+    $('section-budget').textContent = data.samples+' native OHQ runs · Seed '+data.seed;
+    note.textContent = 'Line: median pressure head. Shading: pointwise 5–95% range from the sampled inputs.';
+    sectionSeries = Object.fromEntries(Object.entries(data.pressure_head_quantiles_m).map(([name,rows])=>
+      [name,rows.map(row=>({time_h:row.time_h,pressure_head_m:row.median,
+        pressure_p05_m:row.p05,pressure_p95_m:row.p95}))]));
+  } else {
     const hydro = data.hydrology;
     initializeAnimation(hydro);
     const volume = hydro.outlet_history.at(-1);
-    $('section-budget').textContent =
-      `Rainfall: ${data.rainfall_total_m3.toPrecision(4)} m³. Runoff: ${volume.cumulative_runoff_m3.toPrecision(4)} m³. Reviewed excess: ${volume.cumulative_surface_excess_m3.toPrecision(4)} m³. Seepage: ${volume.cumulative_discharge_m3.toPrecision(4)} m³. Maximum balance residual: ${hydro.water_balance_max_residual_m3.toExponential(2)} m³.`;
-    const choices = $('section-probe');
-    choices.replaceChildren();
-    for (const name of Object.keys(sectionProbes)) {
-      const option = document.createElement('option');
-      option.value = option.textContent = name;
-      choices.append(option);
-    }
-    pressureChart(sectionProbes[choices.value], 'section-chart');
+    $('section-budget').textContent = 'Rainfall: '+data.rainfall_total_m3.toPrecision(4)+' m³. Runoff: '+
+      volume.cumulative_runoff_m3.toPrecision(4)+' m³. Reviewed excess: '+volume.cumulative_surface_excess_m3.toPrecision(4)+
+      ' m³. Seepage: '+volume.cumulative_discharge_m3.toPrecision(4)+' m³. Maximum balance residual: '+
+      hydro.water_balance_max_residual_m3.toExponential(2)+' m³.';
+    note.textContent = '';
+    sectionSeries = data.probes;
+  }
+  const choices = $('section-probe');
+  choices.replaceChildren();
+  for (const name of Object.keys(sectionSeries)) {
+    const option = document.createElement('option');
+    option.value = option.textContent = name;
+    choices.append(option);
+  }
+  drawSectionResultChart();
+}
+
+function showResult(data) {
+  pauseAnimation();
+  const section = Object.hasOwn(sectionAnalyses,data.analysis);
+  $('result-heading').textContent = section ? sectionAnalyses[data.analysis] : 'Factor of safety';
+  $('section-result').hidden = !section;
+  if (section) {
+    $('empty').hidden = $('result').hidden = true;
+    showSectionResult(data);
     return;
   }
   $('empty').hidden = true; $('result').hidden = false;
@@ -561,7 +624,7 @@ async function history() {
   if(!data.jobs.length) {const li=document.createElement('li');li.textContent='No runs yet.';$('jobs').append(li);}
   for(const job of data.jobs.slice(0,8)) {
     const li=document.createElement('li');const button=document.createElement('button');button.className='text-button';
-    button.textContent=`${job.mode==='seepage_2d'?'2D seepage':job.mode==='ensemble'?'Ensemble':'Deterministic'} · ${new Date(job.created_utc).toLocaleTimeString()}`;
+    button.textContent=`${sectionAnalyses[job.mode] ?? (job.mode==='ensemble'?'Ensemble':'Deterministic')} · ${new Date(job.created_utc).toLocaleTimeString()}`;
     button.onclick=()=>openJob(job.id);const state=document.createElement('span');state.textContent=job.state;
     li.append(button,state);$('jobs').append(li);
   }
@@ -577,8 +640,8 @@ async function poll(id, version) {
   try {
     const job=await api(`/api/jobs/${id}`);
     if(version!==viewVersion)return;
-    $('result-heading').textContent = job.mode === 'seepage_2d' ? '2D seepage results' : 'Factor of safety';
-    $('empty-help').hidden = job.mode === 'seepage_2d';
+    $('result-heading').textContent = sectionAnalyses[job.mode] ?? 'Factor of safety';
+    $('empty-help').hidden = Object.hasOwn(sectionAnalyses,job.mode);
     $('state').textContent=job.state;$('progress').value=job.progress;$('status').textContent=job.message;
     $('cancel').hidden=!['queued','running'].includes(job.state);
     if(job.state==='completed') {
@@ -595,7 +658,7 @@ $('scenario').addEventListener('submit',async event=>{
   event.preventDefault();$('form-error').textContent='';$('submit').disabled=true;
   try {const request=scenario();const job=await api('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(request)});await openJob(job.id);}
   catch(error){$('form-error').textContent=error.message;}
-  finally{$('submit').disabled=(isSection()||$('pressure-source').value==='ohq_column'||$('stability-engine').value==='ohq_json')&&!engineAvailable;}
+  finally{driverChanged();}
 });
 $('cancel').onclick=async()=>{try{await api(`/api/jobs/${currentJob}`,{method:'DELETE'});}catch(error){$('status').textContent=error.message;}};
 $('sample-hydraulics').onchange=hydraulicChanged;
@@ -625,7 +688,7 @@ $('stability-play').onclick=()=>togglePlayback($('stability-frame'),$('stability
 $('stability-frame').oninput=()=>{pauseAnimation();drawStabilityFrame();};
 $('animation-field').onchange=drawAnimationFrame;
 $('animation-frame').oninput=()=>{pauseAnimation();drawAnimationFrame();};
-$('section-probe').onchange=()=>pressureChart(sectionProbes[$('section-probe').value], 'section-chart');
+$('section-probe').onchange=drawSectionResultChart;
 $('pressure-source').onchange=()=>{if($('pressure-source').value==='ohq_column') {for(const field of ['value','min','max']) $('failure_depth_m-'+field).value=$('failure_depth_m-value').value;}driverChanged();};
 $('download').onclick=()=>{if(!exported)return;const url=URL.createObjectURL(new Blob([JSON.stringify(exported,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download=`slope-${exported.job.id}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
 reset();
@@ -636,6 +699,7 @@ api('/examples/seepage-2d.json').then(example=>{
 }).catch(error=>{$('form-error').textContent=error.message;});
 api('/api/health').then(health=>{
   engineAvailable=health.ohq_hydrology_available;
+  mcmcAvailable=health.ohq_mcmc_available;
   if(!stabilityEngineSelected) $('stability-engine').value=defaultStabilityEngine();
   driverChanged();
 }).catch(error=>{$('engine-status').textContent=error.message;});

@@ -1,6 +1,8 @@
 """Compose a verified column adapter with the shared mechanical calculation."""
 from hydrology.column import simulate, validate_column
 from hydrology.section import prepare, simulate_section
+from uncertainty.section import run_ensemble, validate_ensemble
+from uncertainty.section_mcmc import mcmc_binary, prepare_calibration, run_mcmc
 from uncertainty.ensemble import run, validate
 from uncertainty.coupled import validate_ranges, run_coupled
 from stability.ohq_diagnostic import evaluate
@@ -21,6 +23,20 @@ def validate_request(request):
         if set(request) != {'analysis', 'section'}:
             raise ValueError('A 2D seepage request must contain analysis and section.')
         prepare(request['section'])
+        return dict(request)
+    if request.get('analysis') == 'seepage_2d_uncertainty':
+        if set(request) != {'analysis','section','ranges','samples','seed'}:
+            raise ValueError('Provide a section, hydraulic ranges, sample count, and seed.')
+        validate_ensemble(request['section'],request['ranges'],request['samples'],request['seed'])
+        return dict(request)
+    if request.get('analysis') == 'seepage_2d_mcmc':
+        if set(request) != {'analysis','section','calibration'}:
+            raise ValueError('Provide a section and calibration settings.')
+        prepare_calibration(request['section'], request['calibration'])
+        if request['calibration']['samples'] > 2000 or request['calibration']['burn_in'] < 2:
+            raise ValueError('Dashboard MCMC supports up to 2000 samples and at least 2 burn-in samples.')
+        if mcmc_binary() is None:
+            raise ValueError('OHQ-MCMC is unavailable. Configure OHQ_MCMC_BINARY before starting the dashboard.')
         return dict(request)
     source=request.get('pressure_source','prescribed_history')
     if source not in ('prescribed_history','ohq_column'):
@@ -60,6 +76,13 @@ def execute(request,folder,progress=lambda value:None,message=lambda text:None,c
         result = simulate_section(folder/'hydrology', request['section'], cancelled)
         progress(1.)
         return result
+    if request.get('analysis') == 'seepage_2d_uncertainty':
+        message('Propagating hydraulic parameter uncertainty through OHQ.')
+        return run_ensemble(folder/'ensemble',request['section'],request['ranges'],
+                            request['samples'],request['seed'],cancelled=cancelled,progress=progress)
+    if request.get('analysis') == 'seepage_2d_mcmc':
+        message('Preparing the native OHQ-MCMC model.')
+        return run_mcmc(folder/'mcmc',request['section'],request['calibration'],cancelled,message)
     evaluator=None;diagnostics=[]
     if request['stability_engine']=='ohq_json':
         def evaluator(mechanical,history,index):

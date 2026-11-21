@@ -10,7 +10,7 @@ from uncertainty.coupled import sample, validate_ranges
 from uncertainty.ensemble import quantile
 
 
-def run_ensemble(folder, nominal, ranges, samples, seed):
+def validate_ensemble(nominal, ranges, samples, seed):
     prepare(nominal)
     if type(samples) is not int or not 2 <= samples <= 100:
         raise ValueError('Use 2–100 realizations.')
@@ -25,22 +25,33 @@ def run_ensemble(folder, nominal, ranges, samples, seed):
         material = material_spec(nominal['materials'][name], name)
         normalized[name] = validate_ranges(entries, material, 1.)
 
+    return normalized
+
+
+def run_ensemble(folder, nominal, ranges, samples, seed, *, cancelled=lambda: False,
+                 progress=lambda value: None):
+    normalized = validate_ensemble(nominal, ranges, samples, seed)
     rng = random.Random(seed)
     records = []
     for index in range(samples):
+        if cancelled():
+            raise InterruptedError("Run cancelled.")
         inputs = copy.deepcopy(nominal)
         draws = {name:{field:sample(rng, entry) for field, entry in entries.items()}
                  for name, entries in normalized.items()}
         for name, values in draws.items():
             inputs['materials'][name].update(values)
         try:
-            result = simulate_section(Path(folder)/f'{index+1:04d}', inputs)
+            result = simulate_section(Path(folder)/f'{index+1:04d}', inputs, cancelled)
+        except InterruptedError:
+            raise
         except (OSError, ValueError) as error:
             raise ValueError(f'Section realization {index+1} failed: {error}') from error
         records.append(dict(material_values=draws, probes=result['probes'],
                             final_water_budget=result['hydrology']['outlet_history'][-1],
                             model_sha256=result['hydrology']['model_sha256'],
                             balance_residual_m3=result['hydrology']['water_balance_max_residual_m3']))
+        progress((index+1)/samples)
     bounds = [('p05', .05), ('median', .5), ('p95', .95)]
     series = {}
     for name in nominal['probes']:

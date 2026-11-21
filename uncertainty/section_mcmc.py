@@ -1,12 +1,20 @@
 """Prepare native OHQ-MCMC input for one material's saturated conductivity."""
 import argparse
+import csv
+import hashlib
 import json
+import math
+import os
+import subprocess
+import time
 from pathlib import Path
 
+from hydrology.column import ROOT
 from hydrology.section import keys, number, prepare, simulate_section
+from uncertainty.ensemble import quantile
 
 
-def export_mcmc(folder, scenario, calibration):
+def prepare_calibration(scenario, calibration):
     prepare(scenario)
     keys(calibration, {'material', 'min_ksat_m_day', 'max_ksat_m_day', 'samples',
                        'burn_in', 'observations'}, 'Calibration')
@@ -54,9 +62,18 @@ def export_mcmc(folder, scenario, calibration):
     if not cells:
         raise ValueError('The selected material is unused.')
 
+    return observations, cells
+
+
+def export_mcmc(folder, scenario, calibration, cancelled=lambda: False):
+    observations, cells = prepare_calibration(scenario, calibration)
+    material = calibration['material']
+    low, high = calibration['min_ksat_m_day'], calibration['max_ksat_m_day']
+    nominal = scenario['materials'][material]['ksat_m_day']
+    samples, burn_in = calibration['samples'], calibration['burn_in']
     folder = Path(folder).resolve()
     folder.mkdir(parents=True, exist_ok=False)
-    forward = simulate_section(folder, scenario)
+    forward = simulate_section(folder, scenario, cancelled)
     lines = (folder/'section.ohq').read_text().splitlines()
     lines.append(f'create parameter;type=Parameter,name=zone_ksat,low={low},high={high},'
                  f'value={nominal},prior_distribution=log-normal')
@@ -80,6 +97,62 @@ def export_mcmc(folder, scenario, calibration):
     result = folder/'calibration.ohq'
     result.write_text('\n'.join(lines)+'\n')
     return result
+
+
+def mcmc_binary():
+    candidate = Path(os.environ.get('OHQ_MCMC_BINARY') or ROOT/'build/ohq-mcmc/OHQ-MCMC')
+    return candidate.resolve() if candidate.is_file() and os.access(candidate, os.X_OK) else None
+
+
+def run_mcmc(folder, scenario, calibration, cancelled, message):
+    binary = mcmc_binary()
+    if binary is None:
+        raise ValueError('Build OHQ-MCMC and set OHQ_MCMC_BINARY before starting the dashboard.')
+    if cancelled():
+        raise InterruptedError('Run cancelled.')
+    digest = hashlib.sha256(binary.read_bytes()).hexdigest()
+    model = export_mcmc(folder, scenario, calibration, cancelled)
+    message('Sampling conductivity with native OHQ-MCMC.')
+    with (model.parent/'mcmc.log').open('w') as log:
+        process = subprocess.Popen([str(binary), model.name, '.'], cwd=model.parent,
+                                   stdout=log, stderr=subprocess.STDOUT,
+                                   env={**os.environ,'OMP_NUM_THREADS':'1','OPENBLAS_NUM_THREADS':'1'})
+        deadline = time.monotonic()+900
+        try:
+            while process.poll() is None:
+                if cancelled():
+                    raise InterruptedError('Run cancelled.')
+                if time.monotonic() >= deadline:
+                    raise ValueError('OHQ-MCMC exceeded its 15-minute limit. See mcmc/mcmc.log.')
+                time.sleep(.1)
+        finally:
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+    if process.returncode:
+        raise ValueError(f'OHQ-MCMC exited with status {process.returncode}. See mcmc/mcmc.log.')
+    chain = []
+    with (model.parent/'mcmc.txt').open() as stream:
+        for row in csv.DictReader(stream, skipinitialspace=True):
+            index = int(row['no.'])
+            if index >= calibration['burn_in']:
+                value = float(row['zone_ksat'])
+                if not math.isfinite(value) or value <= 0:
+                    raise ValueError('OHQ-MCMC returned an invalid conductivity sample.')
+                chain.append({'sample':index, 'chain':index%2+1,'ksat_m_day':value})
+    expected = list(range(max(2,calibration['burn_in']),calibration['samples']))
+    if [row['sample'] for row in chain] != expected:
+        raise ValueError('OHQ-MCMC returned an incomplete sample sequence. See mcmc/mcmc.log.')
+    values = [row['ksat_m_day'] for row in chain]
+    return {'analysis':'seepage_2d_mcmc','material':calibration['material'],
+            'samples':len(chain),'chain':chain,'mcmc_binary_sha256':digest,
+            'ksat_m_day':{name:quantile(values,q) for name,q in
+                          [('p05',.05),('median',.5),('p95',.95)]}}
+
 
 
 def main():

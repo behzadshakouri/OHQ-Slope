@@ -13,6 +13,7 @@ import uuid
 
 from backend.workflow import execute, validate_request
 from hydrology.column import ready
+from uncertainty.section_mcmc import mcmc_binary
 
 ROOT = Path(__file__).resolve().parents[1]
 FRONTEND = ROOT / 'frontend'
@@ -68,19 +69,20 @@ class Jobs:
             folder = self.folder / job_id
             folder.mkdir()
             write_json(folder / 'request.json', request)
-            section = request.get('analysis') == 'seepage_2d'
+            analysis = request.get('analysis')
+            section = analysis in ('seepage_2d','seepage_2d_uncertainty','seepage_2d_mcmc')
             # Snapshot the requested coupling and relevant source identities.
             write_json(folder / 'provenance.json', {
                 'engine': json.loads((ROOT / 'config/engine.json').read_text()),
-                'calculation': 'native_seepage_2d_v1' if section else 'infinite_slope_reference_v1',
+                'calculation': f'native_{analysis}_v1' if section else 'infinite_slope_reference_v1',
                 'source_sha256': {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
-                    for name in ('stability/infinite_slope.py', 'stability/ohq_diagnostic.py', 'components/infinite_slope.json', 'uncertainty/ensemble.py', 'backend/server.py', 'backend/workflow.py', 'hydrology/column.py', 'hydrology/section.py', 'hydrology/native_grid.py', 'hydrology/rainfall.py', 'uncertainty/coupled.py', 'components/column_boundaries.json', 'components/cell_centred_column.json', 'components/reviewed_surface.json', 'OpenHydroQual/resources/unsaturated_soil.json', 'OpenHydroQual/resources/main_components.json')},
+                    for name in ('stability/infinite_slope.py', 'stability/ohq_diagnostic.py', 'components/infinite_slope.json', 'uncertainty/ensemble.py', 'backend/server.py', 'backend/workflow.py', 'hydrology/column.py', 'hydrology/section.py', 'hydrology/native_grid.py', 'hydrology/rainfall.py', 'uncertainty/coupled.py', 'uncertainty/section.py', 'uncertainty/section_mcmc.py', 'components/column_boundaries.json', 'components/cell_centred_column.json', 'components/reviewed_surface.json', 'OpenHydroQual/resources/unsaturated_soil.json', 'OpenHydroQual/resources/main_components.json')},
                 'stability_engine': request.get('stability_engine'),
                 'pressure_source': request.get('pressure_source'),
                 'ohq_hydrology_requested': section or request.get('pressure_source') == 'ohq_column',
             })
             self.items[job_id] = {'id': job_id, 'state': 'queued', 'progress': 0,
-                'mode': request.get('mode', 'seepage_2d'), 'samples': request.get('samples', 1),
+                'mode': request.get('mode', analysis), 'samples': request.get('samples', 1),
                 'created_utc': datetime.now(timezone.utc).isoformat(), 'message': 'Waiting for worker.'}
             self.update(job_id)
             self.pool.submit(self.execute, job_id, request)
@@ -91,7 +93,7 @@ class Jobs:
             with self.lock:
                 if self.items[job_id]['state'] in ('cancelled','interrupted'):
                     return
-                self.update(job_id, state='running', message='Calculating factor of safety.')
+                self.update(job_id, state='running', message='Starting calculation.')
             def cancelled():
                 return self.get(job_id)['state'] in ('cancelled','interrupted')
             result = execute(request, self.folder / job_id,
@@ -166,7 +168,7 @@ def handler_for(jobs):
                 return self.send(200, json.loads((ROOT/'models/seepage_2d_example.json').read_text()))
             if path == '/api/health':
                 return self.send(200, {'status': 'ok', 'pressure_modes': ['prescribed_history', 'ohq_column'],
-                    'ohq_hydrology_available': ready(),
+                    'ohq_hydrology_available': ready(), 'ohq_mcmc_available': mcmc_binary() is not None,
                     'engine': json.loads((ROOT / 'config/engine.json').read_text())})
             if path == '/api/jobs':
                 return self.send(200, {'jobs': jobs.list()})

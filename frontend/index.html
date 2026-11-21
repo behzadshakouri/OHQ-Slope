@@ -9,7 +9,7 @@
 <div class="workspace">
 <form id="scenario" class="panel inputs">
 <div class="section-title"><h2>Scenario</h2><button type="button" id="reset" class="text-button">Reset example</button></div>
-<label for="analysis">Analysis</label><select id="analysis"><option value="stability">Infinite-slope stability</option><option value="seepage_2d">Native 2D seepage</option></select>
+<label for="analysis">Analysis</label><select id="analysis"><option value="stability">Infinite-slope stability</option><option value="seepage_2d">Native 2D seepage</option><option value="seepage_2d_uncertainty">2D uncertainty propagation</option><option value="seepage_2d_mcmc">2D conductivity calibration (MCMC)</option></select>
 <p id="engine-status" class="help" aria-live="polite">Checking OHQ availability…</p>
 <fieldset id="stability-inputs">
 <label for="pressure-source">Pressure source</label><select id="pressure-source"><option value="ohq_column">OHQ rainfall column</option><option value="prescribed_history">Prescribed pressure history</option></select>
@@ -36,7 +36,21 @@
 <section id="prescribed-inputs" hidden><label for="pressure">Pressure history at the failure plane</label><p class="help">One row per time: hours, pressure head in metres. All realizations share this history.</p><textarea id="pressure" rows="7" spellcheck="false" aria-describedby="pressure-help"></textarea><p class="help" id="pressure-help">Negative head adds no suction strength. Minima and crossings are evaluated only at these times.</p>
 </section>
 </fieldset>
-<section id="section-inputs" hidden><div class="two-col"><div><label for="section-width">Section width (m)</label><input id="section-width" type="number" required min=".01" max="1000" step="any" disabled></div><div><label for="section-height">Cell height (m)</label><input id="section-height" type="number" required min=".001" max="100" step="any" disabled></div></div><label for="section-json">2D seepage scenario JSON</label><textarea id="section-json" rows="16" spellcheck="false"></textarea><p class="help">Edit the example to set geometry, material zones, rainfall, and seepage boundaries.</p></section>
+<section id="section-inputs" hidden><div class="two-col"><div><label for="section-width">Section width (m)</label><input id="section-width" type="number" required min=".01" max="1000" step="any" disabled></div><div><label for="section-height">Cell height (m)</label><input id="section-height" type="number" required min=".001" max="100" step="any" disabled></div></div><label for="section-json">2D seepage scenario JSON</label><textarea id="section-json" rows="16" spellcheck="false"></textarea><p class="help">Edit the example to set geometry, material zones, rainfall, and seepage boundaries.</p><fieldset id="section-uq-inputs" hidden disabled><legend>Hydraulic uncertainty</legend>
+<div class="two-col"><div><label for="section-samples">Realizations</label><input id="section-samples" type="number" min="2" max="100" step="1" value="20" required></div><div><label for="section-seed">Seed</label><input id="section-seed" type="number" min="0" max="4294967295" step="1" value="42" required></div></div>
+<label for="section-ranges">Material parameter ranges (JSON)</label><textarea id="section-ranges" rows="7" spellcheck="false" required>{
+  "soil": {
+    "ksat_m_day": {"min": 0.4, "max": 0.6, "distribution": "log_uniform"}
+  }
+}</textarea><p class="help">Each draw runs the same OHQ section with independently sampled inputs.</p></fieldset>
+<fieldset id="section-mcmc-inputs" hidden disabled><legend>Native OHQ-MCMC</legend><label for="section-calibration">Calibration settings and observations (JSON)</label><textarea id="section-calibration" rows="11" spellcheck="false" required>{
+  "material": "soil",
+  "min_ksat_m_day": 0.4,
+  "max_ksat_m_day": 0.6,
+  "samples": 240,
+  "burn_in": 60,
+  "observations": []
+}</textarea><p class="help">Add observed pressure heads (m) and times (h) at soil-cell centres. Each series uses zero-based column and layer indices and a positive observation error scale in metres. The conductivity inputs parameterize the native log-normal prior.</p></fieldset></section>
 <button id="submit" class="primary" type="submit">Run scenario</button><p id="form-error" class="error" role="alert"></p>
 </form>
 <section class="results-column">
@@ -52,7 +66,7 @@
 <div class="animation-scale" aria-label="Color scale"><span id="animation-low"></span><span class="animation-gradient"></span><span id="animation-high"></span></div>
 <div class="animation-controls"><button id="animation-play" type="button" class="text-button">Play</button><label class="sr-only" for="animation-frame">Saved time step</label><input id="animation-frame" type="range" min="0" max="0" step="1" value="0"><output id="animation-time" for="animation-frame"></output></div>
 <p class="help">Each frame shows a saved time step. The color scale stays fixed for the selected field throughout the run.</p>
-</section><label for="section-probe">Pressure probe</label><select id="section-probe"></select><svg id="section-chart" viewBox="0 0 700 230" role="img" aria-label="2D seepage pressure head over time"></svg></section></div>
+</section><label id="section-probe-label" for="section-probe">Pressure probe</label><select id="section-probe"></select><svg id="section-chart" viewBox="0 0 700 230" role="img" aria-label="2D seepage pressure head over time"></svg><p id="section-result-note" class="help"></p></section></div>
 <div class="panel history"><h2>Recent runs</h2><ul id="jobs"><li class="subtle">No runs yet.</li></ul></div>
 </section></div>
 <footer>OHQ-Slope / Infinite-slope reference model · Hydraulic and mechanical uncertainty · OHQ vertical-column coupling</footer>
