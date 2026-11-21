@@ -1,5 +1,6 @@
 """Compose a verified column adapter with the shared mechanical calculation."""
 from hydrology.column import simulate, validate_column
+from hydrology.section import prepare, simulate_section
 from uncertainty.ensemble import run, validate
 from uncertainty.coupled import validate_ranges, run_coupled
 from stability.ohq_diagnostic import evaluate
@@ -16,6 +17,11 @@ def with_stability_engine(request,rows):
 
 def validate_request(request):
     if not isinstance(request,dict):raise ValueError('Scenario must be an object.')
+    if request.get('analysis') == 'seepage_2d':
+        if set(request) != {'analysis', 'section'}:
+            raise ValueError('A 2D seepage request must contain analysis and section.')
+        prepare(request['section'])
+        return dict(request)
     source=request.get('pressure_source','prescribed_history')
     if source not in ('prescribed_history','ohq_column'):
         raise ValueError('Choose prescribed_history or ohq_column pressure source.')
@@ -48,6 +54,12 @@ def validate_request(request):
 
 def execute(request,folder,progress=lambda value:None,message=lambda text:None,cancelled=lambda:False):
     request=validate_request(request)
+    if request.get('analysis') == 'seepage_2d':
+        message('Running the native OHQ soil grid and checking water balance.')
+        progress(.05)
+        result = simulate_section(folder/'hydrology', request['section'], cancelled)
+        progress(1.)
+        return result
     evaluator=None;diagnostics=[]
     if request['stability_engine']=='ohq_json':
         def evaluator(mechanical,history,index):

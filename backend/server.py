@@ -68,17 +68,19 @@ class Jobs:
             folder = self.folder / job_id
             folder.mkdir()
             write_json(folder / 'request.json', request)
+            section = request.get('analysis') == 'seepage_2d'
             # Snapshot the requested coupling and relevant source identities.
             write_json(folder / 'provenance.json', {
                 'engine': json.loads((ROOT / 'config/engine.json').read_text()),
-                'calculation': 'infinite_slope_reference_v1',
+                'calculation': 'native_seepage_2d_v1' if section else 'infinite_slope_reference_v1',
                 'source_sha256': {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
-                    for name in ('stability/infinite_slope.py', 'stability/ohq_diagnostic.py', 'components/infinite_slope.json', 'uncertainty/ensemble.py', 'backend/server.py', 'backend/workflow.py', 'hydrology/column.py', 'hydrology/rainfall.py', 'uncertainty/coupled.py', 'components/column_boundaries.json', 'components/cell_centred_column.json', 'OpenHydroQual/resources/unsaturated_soil.json', 'OpenHydroQual/resources/main_components.json')},
-                'stability_engine':request['stability_engine'],
-                'pressure_source': request['pressure_source'], 'ohq_hydrology_requested': request['pressure_source']=='ohq_column',
+                    for name in ('stability/infinite_slope.py', 'stability/ohq_diagnostic.py', 'components/infinite_slope.json', 'uncertainty/ensemble.py', 'backend/server.py', 'backend/workflow.py', 'hydrology/column.py', 'hydrology/section.py', 'hydrology/native_grid.py', 'hydrology/rainfall.py', 'uncertainty/coupled.py', 'components/column_boundaries.json', 'components/cell_centred_column.json', 'components/reviewed_surface.json', 'OpenHydroQual/resources/unsaturated_soil.json', 'OpenHydroQual/resources/main_components.json')},
+                'stability_engine': request.get('stability_engine'),
+                'pressure_source': request.get('pressure_source'),
+                'ohq_hydrology_requested': section or request.get('pressure_source') == 'ohq_column',
             })
             self.items[job_id] = {'id': job_id, 'state': 'queued', 'progress': 0,
-                'mode': request['mode'], 'samples': request['samples'],
+                'mode': request.get('mode', 'seepage_2d'), 'samples': request.get('samples', 1),
                 'created_utc': datetime.now(timezone.utc).isoformat(), 'message': 'Waiting for worker.'}
             self.update(job_id)
             self.pool.submit(self.execute, job_id, request)
@@ -160,6 +162,8 @@ def handler_for(jobs):
             if path in assets:
                 name, mime = assets[path]
                 return self.send(200, (FRONTEND / name).read_bytes(), mime)
+            if path == '/examples/seepage-2d.json':
+                return self.send(200, json.loads((ROOT/'models/seepage_2d_example.json').read_text()))
             if path == '/api/health':
                 return self.send(200, {'status': 'ok', 'pressure_modes': ['prescribed_history', 'ohq_column'],
                     'ohq_hydrology_available': ready(),

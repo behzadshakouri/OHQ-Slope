@@ -10,7 +10,7 @@ from zipfile import ZipFile
 from hydrology.column import BINARY, ROOT, initial_pressure, interpolate, validate_column
 from validation.column_sensitivity import metrics
 from validation.geostudio_archive import csv_rows, mesh_nodes
-from validation.native_seepage_2d import grid_trial, sample_at_probe
+from hydrology.native_grid import grid_trial, sample_at_probe
 
 
 def case_inputs(archive_path, manifest, boundary):

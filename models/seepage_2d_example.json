@@ -1,0 +1,95 @@
+{
+  "width_m": 0.4,
+  "cell_height_m": 0.0375,
+  "materials": {
+    "soil": {
+      "ksat_m_day": 0.5,
+      "alpha_per_m": 1.5,
+      "n": 1.6,
+      "theta_res": 0.05,
+      "theta_sat": 0.4,
+      "pore_connectivity": 0.5,
+      "specific_storage_per_m": 0.03,
+      "initial_theta": 0.399999
+    }
+  },
+  "columns": [
+    {
+      "materials": [
+        "soil",
+        "soil",
+        "soil",
+        "soil",
+        "soil",
+        "soil",
+        "soil",
+        "soil"
+      ],
+      "rainfall": [
+        {
+          "start_h": 0,
+          "end_h": 0.0625,
+          "intensity_mm_h": 70
+        }
+      ]
+    },
+    {
+      "materials": [
+        "soil",
+        "soil",
+        "soil",
+        "soil",
+        "soil",
+        "soil",
+        "soil"
+      ],
+      "rainfall": [
+        {
+          "start_h": 0,
+          "end_h": 0.0625,
+          "intensity_mm_h": 70
+        }
+      ]
+    },
+    {
+      "materials": [
+        "soil",
+        "soil",
+        "soil",
+        "soil",
+        "soil",
+        "soil"
+      ],
+      "rainfall": []
+    },
+    {
+      "materials": [
+        "soil",
+        "soil",
+        "soil",
+        "soil",
+        "soil"
+      ],
+      "rainfall": []
+    }
+  ],
+  "boundaries": {
+    "surface": "routed_runoff",
+    "routing_slope": 0.375,
+    "toe_seepage": true,
+    "riser_seepage": true
+  },
+  "duration_h": 0.125,
+  "output_interval_h": 0.0125,
+  "solver_step_h": 0.004166666666666667,
+  "probes": {
+    "lower_face": {
+      "x_m": 0.25,
+      "elevation_m": 0.13125
+    },
+    "toe": {
+      "x_m": 0.35,
+      "elevation_m": 0.09375
+    }
+  }
+}

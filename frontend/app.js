@@ -74,16 +74,25 @@ function advancedInputs() {
     wrapper.append(text,input);$('column-advanced').append(wrapper);
   }
 }
+const isSection = () => $('analysis').value === 'seepage_2d';
+let sectionExample = null;
+let sectionProbes = null;
+
 function driverChanged() {
+  const section = isSection();
+  $('stability-inputs').hidden = $('stability-inputs').disabled = section;
+  $('section-inputs').hidden = !section;
+  $('stability-visual').hidden = section;
   const hydro=$('pressure-source').value==='ohq_column';
   $('column-inputs').hidden=!hydro;$('prescribed-inputs').hidden=hydro;
   document.querySelectorAll('#column-inputs input,#column-inputs select,#column-inputs textarea').forEach(node=>{node.disabled=!hydro;});
   $('pressure').disabled=hydro;
-  $('driver-title').textContent=hydro?'OHQ rainfall column':'Reference calculation';
-  $('driver-note').textContent=hydro?'Prototype column: one OHQ run supplies pressure. Hydraulic inputs and failure depth are fixed; transient grid sensitivity remains.':'Pressure is supplied by you; no hydrologic simulation is used.';
+  $('driver-title').textContent=section?'Native OHQ 2D seepage':hydro?'OHQ rainfall column':'Reference calculation';
+  $('driver-note').textContent=section?'Run a configured soil section and inspect its pressure response and water balance.':hydro?'Prototype column: one OHQ run supplies pressure. Hydraulic inputs and failure depth are fixed; transient grid sensitivity remains.':'Pressure is supplied by you; no hydrologic simulation is used.';
   $('engine-status').textContent=engineAvailable?'OHQ console built and available.': 'OHQ is not built. Use Python reference with prescribed pressure, or build the console; see the README.';
-  $('submit').disabled=(hydro||$('stability-engine').value==='ohq_json')&&!engineAvailable;
-  rainfallChanged();modeChanged();
+  $('submit').disabled=(section||hydro||$('stability-engine').value==='ohq_json')&&!engineAvailable;
+  rainfallChanged();
+  if (!section) modeChanged();
 }
 
 function inputs() {
@@ -118,6 +127,7 @@ function defaultStabilityEngine() {
   return engineAvailable ? 'ohq_json' : 'python_reference';
 }
 function reset() {
+  if (sectionExample) $('section-json').value = JSON.stringify(sectionExample, null, 2);
   stabilityEngineSelected = false;
   inputs();advancedInputs();hydraulicInputs();$('sample-hydraulics').checked=false; $('mode').value = 'deterministic';$('pressure-source').value='ohq_column';$('stability-engine').value=defaultStabilityEngine();
   for(const field of ['value','min','max']) $('failure_depth_m-'+field).value='1';
@@ -127,6 +137,7 @@ function reset() {
   $('samples').value = '2000'; $('seed').value = '42';formulationChanged(); driverChanged(); $('form-error').textContent = '';
 }
 function scenario() {
+  if (isSection()) return {analysis: 'seepage_2d', section: JSON.parse($('section-json').value)};
   const parameters = {};
   for (const [key] of definitions) {
     parameters[key] = Object.fromEntries(['value', 'min', 'max'].map(field => [field, Number($(`${key}-${field}`).value)]));
@@ -188,8 +199,8 @@ function chart(rows) {
   svg.append(element('text',{x:width/2,y:height-5,'text-anchor':'middle'},'Time (hours)'));
   svg.append(element('text',{x:15,y:18},'FS'));
 }
-function pressureChart(rows) {
-  const svg=$('pressure-chart');svg.replaceChildren();
+function pressureChart(rows, chartId = 'pressure-chart') {
+  const svg=$(chartId);svg.replaceChildren();
   const left=55,right=675,top=20,bottom=185;
   const low=Math.min(0,...rows.map(row=>row.pressure_p05_m??row.pressure_head_m)), high=Math.max(0.1,...rows.map(row=>row.pressure_p95_m??row.pressure_head_m));
   const x=t=>left+(t-rows[0].time_h)/(rows.at(-1).time_h-rows[0].time_h)*(right-left);
@@ -210,6 +221,26 @@ function pressureChart(rows) {
   svg.append(element('text',{x:350,y:225,'text-anchor':'middle'},'Time (hours)'));
 }
 function showResult(data) {
+  const section = data.analysis === 'seepage_2d';
+  $('result-heading').textContent = section ? '2D seepage results' : 'Factor of safety';
+  $('section-result').hidden = !section;
+  if (section) {
+    $('empty').hidden = $('result').hidden = true;
+    sectionProbes = data.probes;
+    const hydro = data.hydrology;
+    const volume = hydro.outlet_history.at(-1);
+    $('section-budget').textContent =
+      `Rainfall: ${data.rainfall_total_m3.toPrecision(4)} m³. Runoff: ${volume.cumulative_runoff_m3.toPrecision(4)} m³. Reviewed excess: ${volume.cumulative_surface_excess_m3.toPrecision(4)} m³. Seepage: ${volume.cumulative_discharge_m3.toPrecision(4)} m³. Maximum balance residual: ${hydro.water_balance_max_residual_m3.toExponential(2)} m³.`;
+    const choices = $('section-probe');
+    choices.replaceChildren();
+    for (const name of Object.keys(sectionProbes)) {
+      const option = document.createElement('option');
+      option.value = option.textContent = name;
+      choices.append(option);
+    }
+    pressureChart(sectionProbes[choices.value], 'section-chart');
+    return;
+  }
   $('empty').hidden = true; $('result').hidden = false;
   $('minimum').textContent = data.minimum_fs.median.toFixed(3);
   const ensemble=data.mode==='ensemble';
@@ -240,14 +271,14 @@ async function history() {
   if(!data.jobs.length) {const li=document.createElement('li');li.textContent='No runs yet.';$('jobs').append(li);}
   for(const job of data.jobs.slice(0,8)) {
     const li=document.createElement('li');const button=document.createElement('button');button.className='text-button';
-    button.textContent=`${job.mode==='ensemble'?'Ensemble':'Deterministic'} · ${new Date(job.created_utc).toLocaleTimeString()}`;
+    button.textContent=`${job.mode==='seepage_2d'?'2D seepage':job.mode==='ensemble'?'Ensemble':'Deterministic'} · ${new Date(job.created_utc).toLocaleTimeString()}`;
     button.onclick=()=>openJob(job.id);const state=document.createElement('span');state.textContent=job.state;
     li.append(button,state);$('jobs').append(li);
   }
 }
 async function openJob(id) {
   clearTimeout(timer); const version=++viewVersion;currentJob=id;exported=null;$('download').disabled=true;
-  $('result').hidden=true;$('empty').hidden=false;
+  $('section-result').hidden=true;$('result').hidden=true;$('empty').hidden=false;
   $('empty').firstElementChild.textContent='Waiting for results from this run.';
   await poll(id, version);
 }
@@ -255,6 +286,8 @@ async function poll(id, version) {
   try {
     const job=await api(`/api/jobs/${id}`);
     if(version!==viewVersion)return;
+    $('result-heading').textContent = job.mode === 'seepage_2d' ? '2D seepage results' : 'Factor of safety';
+    $('empty-help').hidden = job.mode === 'seepage_2d';
     $('state').textContent=job.state;$('progress').value=job.progress;$('status').textContent=job.message;
     $('cancel').hidden=!['queued','running'].includes(job.state);
     if(job.state==='completed') {
@@ -271,7 +304,7 @@ $('scenario').addEventListener('submit',async event=>{
   event.preventDefault();$('form-error').textContent='';$('submit').disabled=true;
   try {const request=scenario();const job=await api('/api/jobs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(request)});await openJob(job.id);}
   catch(error){$('form-error').textContent=error.message;}
-  finally{$('submit').disabled=($('pressure-source').value==='ohq_column'||$('stability-engine').value==='ohq_json')&&!engineAvailable;}
+  finally{$('submit').disabled=(isSection()||$('pressure-source').value==='ohq_column'||$('stability-engine').value==='ohq_json')&&!engineAvailable;}
 });
 $('cancel').onclick=async()=>{try{await api(`/api/jobs/${currentJob}`,{method:'DELETE'});}catch(error){$('status').textContent=error.message;}};
 $('sample-hydraulics').onchange=hydraulicChanged;
@@ -279,9 +312,15 @@ $('column-formulation').onchange=formulationChanged;
 $('rain-mode').onchange=rainfallChanged;
 $('stability-engine').onchange=()=>{stabilityEngineSelected=true;driverChanged();};
 $('mode').onchange=modeChanged;$('reset').onclick=reset;
+$('analysis').onchange=driverChanged;
+$('section-probe').onchange=()=>pressureChart(sectionProbes[$('section-probe').value], 'section-chart');
 $('pressure-source').onchange=()=>{if($('pressure-source').value==='ohq_column') {for(const field of ['value','min','max']) $('failure_depth_m-'+field).value=$('failure_depth_m-value').value;}driverChanged();};
 $('download').onclick=()=>{if(!exported)return;const url=URL.createObjectURL(new Blob([JSON.stringify(exported,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download=`slope-${exported.job.id}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
 reset();
+api('/examples/seepage-2d.json').then(example=>{
+  sectionExample = example;
+  if (!$('section-json').value) $('section-json').value = JSON.stringify(example, null, 2);
+}).catch(error=>{$('form-error').textContent=error.message;});
 api('/api/health').then(health=>{
   engineAvailable=health.ohq_hydrology_available;
   if(!stabilityEngineSelected) $('stability-engine').value=defaultStabilityEngine();

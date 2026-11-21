@@ -41,6 +41,10 @@ New modeling work follows an [OHQ-first development policy](docs/development.md#
 
 **Column mode is a prototype.** It simulates vertical rainfall infiltration with surface ponding; transient grid sensitivity remains material. Prescribed-pressure mode is available without building OHQ. Mechanical-only ensembles reuse one pressure history; hydraulic ensembles run OHQ separately for each sample. Column-mode geometry and failure depth are fixed. No field validation, finite-slope geometry, seismic load, deformation, or live digital twin is implemented. Inputs and uncertainty ranges are synthetic. No paper materials are included.
 
+The [native 2D seepage workflow](docs/section_scenario.md) supports editable
+section scenarios in the browser and CLI, forward hydraulic uncertainty,
+and model export to native OHQ-MCMC.
+
 ## Run locally
 
 Python 3.10 or newer is sufficient; the current app uses only its standard library. No front-end build or package installation is needed.
