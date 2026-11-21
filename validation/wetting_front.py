@@ -93,24 +93,21 @@ def independent_trial(spec, points):
     return {'hydrology': hydro, 'extracted': extracted}
 
 
-def fine_grid_refinement(benchmark):
-    """Refine space and time independently over the same saved time grid."""
+def independent_refinement(benchmark, pairs):
+    """Compare selected grid and step pairs over the same saved time grid."""
     points = benchmark['points']
+    keys = dict.fromkeys(key for _, first, second in pairs for key in (first, second))
     trials = {}
-    for cells in (64, 128, 256):
-        for seconds in (7.5, 3.75):
-            spec = dict(benchmark['column'], cells=cells, solver_step_h=seconds / 3600)
-            run = independent_trial(spec, points)
-            hydro = run['hydrology']
-            trials[cells, seconds] = dict(
-                cells=cells, maximum_step_s=seconds, steps=hydro['steps'],
-                water_balance_max_residual_m3=hydro['water_balance_max_residual_m3'],
-                extracted=run['extracted'])
+    for cells, seconds in keys:
+        spec = dict(benchmark['column'], cells=cells, solver_step_h=seconds / 3600)
+        run = independent_trial(spec, points)
+        hydro = run['hydrology']
+        trials[cells, seconds] = dict(
+            cells=cells, maximum_step_s=seconds, steps=hydro['steps'],
+            water_balance_max_residual_m3=hydro['water_balance_max_residual_m3'],
+            extracted=run['extracted'])
 
     comparisons = []
-    pairs = [('grid', (coarse, seconds), (2 * coarse, seconds))
-             for coarse in (64, 128) for seconds in (7.5, 3.75)]
-    pairs += [('time_step', (n, 7.5), (n, 3.75)) for n in (64, 128, 256)]
     for axis, first, second in pairs:
         a, b = (trials[key]['extracted'] for key in (first, second))
         differences = {point: compare_points(a[point], b[point]) for point in a}
@@ -124,6 +121,18 @@ def fine_grid_refinement(benchmark):
             'water_balance_max_residual_m3': balance,
             'water_balance_passed': balance <= BALANCE_LIMIT_M3,
             'scope': 'Independent finite-volume sensitivity at saved times. Finest grid is not an exact reference.'}
+
+
+def fine_grid_refinement(benchmark):
+    pairs = [('grid', (coarse, seconds), (2 * coarse, seconds))
+             for coarse in (64, 128) for seconds in (7.5, 3.75)]
+    pairs += [('time_step', (n, 7.5), (n, 3.75)) for n in (64, 128, 256)]
+    return independent_refinement(benchmark, pairs)
+
+
+def fine_time_refinement(benchmark):
+    pairs = [('time_step', (256, step), (256, step / 2)) for step in (3.75, 1.875)]
+    return independent_refinement(benchmark, pairs)
 
 
 def compare_independent(study):
@@ -157,6 +166,8 @@ def main():
                         help='Run the independent finite-volume solver at matching grids and steps.')
     parser.add_argument('--fine-grid', action='store_true',
                         help='Run independent 64/128/256-cell refinement at 7.5 and 3.75 seconds.')
+    parser.add_argument('--fine-time', action='store_true',
+                        help='Run 256 independent cells at 3.75, 1.875 and 0.9375 seconds.')
     args = parser.parse_args()
     if args.output.resolve() in (args.study.resolve(), BENCHMARK.resolve()):
         parser.error('Output must differ from the study and benchmark inputs.')
@@ -168,6 +179,8 @@ def main():
             result['independent'] = compare_independent(study)
         if args.fine_grid:
             result['fine_grid'] = fine_grid_refinement(study['study'])
+        if args.fine_time:
+            result['fine_time'] = fine_time_refinement(study['study'])
         result['study_sha256'] = hashlib.sha256(data).hexdigest()
     except (OSError, ValueError, KeyError, TypeError) as error:
         result = dict(state='failed', message=str(error), field_validated=False, fs_computed=False)

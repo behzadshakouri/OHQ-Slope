@@ -151,6 +151,20 @@ In the independent run, 128→256 cells met the spatial targets at both steps
 comparison still changed pressure head by up to 0.0197 m, above the 0.005 m
 temporal target. The results reflect the benchmark's saved times and depths.
 
+To halve the maximum time step twice at 256 cells, run:
+
+```sh
+python3 -m validation.wetting_front results/wetting-front-benchmark.json --fine-time --output results/wetting-front-fine-time.json
+```
+
+The independent solver compares 3.75→1.875 s and 1.875→0.9375 s at the
+original one-minute output times. The `fine_time` report records each
+pair's pressure, moisture and arrival differences and acceptance status,
+as well as conservation at each step size. At 256 cells, the peak
+pressure difference fell from 0.01035 m for the first pair to 0.00531 m
+for the second, just above the 0.005 m target. Moisture, arrival, and water
+balance met their targets.
+
 ## Full archive inventory
 
 ```sh
