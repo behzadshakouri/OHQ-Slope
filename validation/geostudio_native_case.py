@@ -1,4 +1,4 @@
-"""Run a first-pulse native OHQ comparison for the archived single-region flume."""
+"""Run a transient native OHQ comparison for the archived single-region flume."""
 import argparse
 import hashlib
 import json
@@ -13,7 +13,7 @@ from validation.geostudio_archive import csv_rows, mesh_nodes
 from hydrology.native_grid import grid_trial, sample_at_probe
 
 
-def case_inputs(archive_path, manifest, boundary):
+def case_inputs(archive_path, manifest, boundary, duration=2.):
     hasher = hashlib.sha256()
     with archive_path.open('rb') as stream:
         for block in iter(lambda: stream.read(1024 * 1024), b''):
@@ -26,7 +26,8 @@ def case_inputs(archive_path, manifest, boundary):
 
     forcing = manifest['archived_forcing']
     material = manifest['candidate_constitutive_representation']
-    duration = 2.
+    if not math.isfinite(duration) or duration <= 0:
+        raise ValueError('Duration must be positive and finite.')
     schedule = [{'start_h': a, 'end_h': min(b, duration), 'intensity_mm_h': forcing['nominal_rainfall_mm_h']}
                 for a, b in forcing['active_windows_h'] if a < duration]
     initial = forcing['initial_pressure_head_m']
@@ -68,6 +69,8 @@ def case_inputs(archive_path, manifest, boundary):
                 entry['series'].append(dict(time_h=time_h, pressure_head_m=values[entry['node']]))
     if any(not entry['series'] for entry in refs.values()):
         raise ValueError('Missing saved reference time series.')
+    if not math.isclose(refs['crest']['series'][-1]['time_h'], duration, rel_tol=0., abs_tol=1e-9):
+        raise ValueError('Duration must match a saved GeoStudio time.')
 
     geometry = manifest['archived_2d_geometry']
     # Explicitly verify the audited partition before reducing it to a staircase.
@@ -140,16 +143,17 @@ def main():
     parser.add_argument('archive', type=Path)
     parser.add_argument('manifest', type=Path)
     parser.add_argument('boundary_evidence', type=Path)
-    parser.add_argument('--columns', type=int, choices=(8,16), default=8)
-    parser.add_argument('--layers', type=int, choices=(14,28), default=14)
+    parser.add_argument('--columns', type=int, choices=(8,12,16), default=8)
+    parser.add_argument('--layers', type=int, choices=(14,21,28), default=14)
     parser.add_argument('--step-seconds', type=float, choices=(30.,60.), default=60.)
+    parser.add_argument("--duration-hours", type=float, default=2.)
     parser.add_argument('--engine-seconds', type=int, default=600)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     if args.output.resolve() in {p.resolve() for p in (args.archive,args.manifest,args.boundary_evidence)}:
         parser.error('The output path must differ from the input paths.')
     inputs = case_inputs(args.archive, json.loads(args.manifest.read_text()),
-                         json.loads(args.boundary_evidence.read_text()))
+                         json.loads(args.boundary_evidence.read_text()), args.duration_hours)
     result = run_case(args.output.parent/(args.output.stem+'_files'), inputs, args.columns, args.layers,
                       args.step_seconds, args.engine_seconds)
     args.output.write_text(json.dumps(result, indent=2)+'\n')
