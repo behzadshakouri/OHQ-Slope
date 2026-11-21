@@ -127,3 +127,34 @@ Of the 1.1875 L applied to the first surface only, 0.7002 L left as runoff
 and 0.4873 L remained as additional soil water at the end of the run. The
 second surface received runon. A closed-surface control recorded zero runoff.
 The maximum native balance residual was 1.5 × 10⁻¹³ m³.
+
+### Native stepped-slope benchmark
+
+```sh
+python3 -m validation.native_seepage_2d --slope --output results/native-seepage-2d-slope.json
+```
+
+The synthetic section is 0.4 m wide with a sealed horizontal base. Four
+terraces at elevations 0.30, 0.2625, 0.225 and 0.1875 m each span 0.10 m.
+Horizontal soil links connect only cells with coincident elevation ranges.
+Atmospheric outlets are enabled on the exposed step faces and the right toe.
+The stock catchment links route runoff downslope using a prescribed grade
+of 0.375. The upper half receives 70 mm/h for 3.75 minutes, followed by an
+equal dry period. A specified near-saturated water content initializes the
+soil; the outlets can therefore discharge initial water as well as recent
+rainfall.
+
+The coarse grid uses 26 cells over four columns at a 15-second maximum
+step. The 104-cell grid subdivides each terrace horizontally and vertically
+at the same maximum step, then repeats at 7.5 seconds. Terrace elevations
+and extents are identical across the two resolutions. Pressure histories
+are compared at fixed lower-face and toe coordinates. The comparisons
+measure grid and time-step sensitivity for this stepped geometry.
+
+The finest run partitions 0.875 L of rainfall into 0.530 L of runoff, 0.260 L
+of seepage discharge and 0.085 L of soil storage gain, with zero final surface
+storage. The maximum balance residual across the three runs is 2.1 × 10⁻¹¹
+m³. Grid refinement changes peak saved probe pressure by up to 5.53 mm;
+halving the maximum step changes it by up to 1.47 mm. These synthetic results
+verify coupling across the native components. Transfer to the GeoStudio slope
+requires matching its geometry, materials, initial pressures and boundaries.

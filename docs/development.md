@@ -102,7 +102,7 @@ or independent numerical benchmark before it is used to interpret the case.
 
 | Analysis | Current OHQ-Slope scope | Modeling work |
 |---|---|---|
-| Seepage | One-dimensional saturated/unsaturated columns and a [standalone 2D saturated reference](seepage_2d.md) with lateral flow, imposed infiltration, and an atmospheric outlet | Assemble a native 2D unsaturated model from existing soil components, then add sloping boundaries, material zones, and infiltration/runoff partitioning. Establish 3D requirements after 2D checks. |
+| Seepage | One-dimensional saturated/unsaturated columns and a [standalone 2D saturated reference](seepage_2d.md) with lateral flow, imposed infiltration, and an atmospheric outlet | Extend the native stepped-slope benchmark with case geometry, material zones, and measured or archived boundary forcing. Compare lower-face and toe pressure histories against the external case. Establish 3D requirements after 2D checks. |
 | Slope stability | Infinite slope with supplied or column-derived pore pressure | Define suction strength and external water loading, then add finite slope geometry, slice equilibrium and slip-surface search with benchmark cases. |
 | Stress and deformation | Archive inventory and a pressure interface to the existing stability model | Define displacement, stress, material laws and staged construction. Verify a standalone mechanical reference before coupling pore pressure and deformation. |
 | Seismic response | Rainfall-conditioned pore pressure histories | First verify pseudostatic stability. Dynamic response, cyclic strength and shaking-generated pore pressure require their own models and benchmarks. |

@@ -12,8 +12,16 @@ from hydrology.column import (
 from hydrology.rainfall import cumulative_depth_m
 
 
-def grid_trial(folder, spec, rain_rates_mm_h, *, link_columns=True, right_outlet_rows=(), route_runoff=False):
-    width_m = .2
+def grid_trial(folder, spec, rain_rates_mm_h, *, link_columns=True, right_outlet_rows=(),
+               route_runoff=False, width_m=.2, column_cells=None, surface_slope=.01,
+               exposed_step_outlets=False):
+    datum_at_surface = column_cells is None
+    if column_cells is None:
+        column_cells = [spec['cells']] * len(rain_rates_mm_h)
+    if (len(column_cells) != len(rain_rates_mm_h)
+            or any(type(n) is not int or not 1 <= n <= spec['cells'] for n in column_cells)
+            or any(right > left for left, right in zip(column_cells, column_cells[1:]))):
+        raise ValueError('Column cell counts must match the rainfall cells and descend toward the toe.')
     dx = width_m / len(rain_rates_mm_h)
     dz = spec['depth_m'] / spec['cells']
     folder = folder.resolve()
@@ -23,42 +31,48 @@ def grid_trial(folder, spec, rain_rates_mm_h, *, link_columns=True, right_outlet
         f'addtemplate;filename={ENGINE}/resources/unsaturated_soil.json',
         f'addtemplate;filename={ROOT}/components/cell_centred_column.json',
     ]
+    datum_shift = -spec['depth_m'] if datum_at_surface else 0.
     rain_specs = [dict(spec, rainfall_mm_h=rate) for rate in rain_rates_mm_h]
     initial = {}
-    for i, rain in enumerate(rain_specs):
+    for i, (rain, count) in enumerate(zip(rain_specs, column_cells)):
         write_native_rainfall(folder, rain, f'rain_{i}.csv')
         lines.extend([
             f'create source;type=Precipitation,name=Rain{i},timeseries=rain_{i}.csv',
-            f'create block;type=Catchment,name=Surface{i},area={dx},depth=0,elevation=0,'
-            f'Slope=0.01,Width=1,ManningCoeff=0.03,depression_storage=0,'
+            f'create block;type=Catchment,name=Surface{i},area={dx},depth=0,elevation={datum_shift + count*dz},'
+            f'Slope={surface_slope},Width=1,ManningCoeff=0.03,depression_storage=0,'
             f'Runoff_coeff=1,loss_coefficient=0,Precipitation=Rain{i}',
         ])
         initial[f'Surface{i}'] = ('Storage', 0.)
-        for j in range(spec['cells']):
+        for j in range(count):
             soil = f'Soil{i}_{j}'
-            lines.append(native_soil_block(spec, soil, dx, dz, -(j + 1) * dz))
+            lines.append(native_soil_block(spec, soil, dx, dz, -(j + 1)*dz if datum_at_surface else (count - j - 1)*dz))
             initial[soil] = ('Storage', dx * dz * spec['initial_theta'])
             if j:
                 lines.append(f'create link;type=Column Centre Soil Link,from=Soil{i}_{j-1},'
                              f'to={soil},name=Vertical{i}_{j}')
             if i and link_columns:
-                lines.append(f'create link;type=soil_to_soil_H_link,from=Soil{i-1}_{j},'
+                left_j = j + column_cells[i-1] - count
+                lines.append(f'create link;type=soil_to_soil_H_link,from=Soil{i-1}_{left_j},'
                              f'to={soil},name=Lateral{i}_{j},length={dx},area={dz}')
 
         lines.append(f'create link;type=Column Centre Surface Link,from=Surface{i},to=Soil{i}_0,'
                      f'name=Infiltration{i}')
 
-    if right_outlet_rows or route_runoff:
+    outlet_cells = [(len(column_cells) - 1, j) for j in right_outlet_rows]
+    if exposed_step_outlets:
+        outlet_cells.extend((i, j) for i, (left, right) in
+                            enumerate(zip(column_cells, column_cells[1:]))
+                            for j in range(left - right))
+    if outlet_cells or route_runoff:
         lines.insert(3, f'addtemplate;filename={ROOT}/components/column_boundaries.json')
     outlets = []
-    for j in right_outlet_rows:
-        outlet = f'Outlet{j}'
+    for i, j in outlet_cells:
+        outlet = f'Outlet{i}_{j}'
         outlets.append(outlet)
         initial[outlet] = ('Storage', 0.)
         lines.append(f'create block;type=Column Drainage Collector,name={outlet}')
-        lines.append(f'create link;type=soil_free_outflow,'
-                     f'from=Soil{len(rain_rates_mm_h)-1}_{j},to={outlet},'
-                     f'name=Seepage{j},length={dx/2},area={dz},'
+        lines.append(f'create link;type=soil_free_outflow,from=Soil{i}_{j},to={outlet},'
+                     f'name=Seepage{i}_{j},length={dx/2},area={dz},'
                      f"K_sat_original={spec['ksat_m_day']}")
 
     if route_runoff:
@@ -98,7 +112,7 @@ def grid_trial(folder, spec, rain_rates_mm_h, *, link_columns=True, right_outlet
         raw[name][0] = (0., value)
 
     def storage(i, time):
-        cells = (f'storage_Soil{i}_{j}' for j in range(spec['cells']))
+        cells = (f'storage_Soil{i}_{j}' for j in range(column_cells[i]))
         return math.fsum(interpolate(raw[name], time)
                          for name in (f'storage_Surface{i}', *cells))
 
@@ -111,7 +125,7 @@ def grid_trial(folder, spec, rain_rates_mm_h, *, link_columns=True, right_outlet
         return interpolate(raw['storage_RunoffOutlet'], time) if route_runoff else 0.
 
     residual = max(abs(discharge(time) + runoff(time) + math.fsum(
-        storage(i, time) - dx * (spec['depth_m'] * spec['initial_theta'] + cumulative_depth_m(rain, time))
+        storage(i, time) - dx * (column_cells[i] * dz * spec['initial_theta'] + cumulative_depth_m(rain, time))
         for i, rain in enumerate(rain_specs))) for time, _ in raw['storage_Surface0'])
     duration = spec['duration_h']
     spacing = spec['output_interval_h']
@@ -122,9 +136,9 @@ def grid_trial(folder, spec, rain_rates_mm_h, *, link_columns=True, right_outlet
         [dict(time_h=time, water_storage_m3=storage(i, time),
               surface_storage_m3=interpolate(raw[f'storage_Surface{i}'], time),
               pressure_head_m=[interpolate(raw[f'pressure_Soil{i}_{j}'], time)
-                               for j in range(spec['cells'])],
+                               for j in range(column_cells[i])],
               theta=[interpolate(raw[f'theta_Soil{i}_{j}'], time)
-                     for j in range(spec['cells'])])
+                     for j in range(column_cells[i])])
          for time in times]
         for i in range(len(rain_rates_mm_h))
     ]
@@ -132,7 +146,10 @@ def grid_trial(folder, spec, rain_rates_mm_h, *, link_columns=True, right_outlet
                 rainfall_mm_h=rain_rates_mm_h, connected=link_columns, outlet_rows=list(right_outlet_rows),
                 outlet_history=[dict(time_h=time, cumulative_discharge_m3=discharge(time),
                                      cumulative_runoff_m3=runoff(time)) for time in times],
-                routed_runoff=route_runoff,
+                routed_runoff=route_runoff, outlet_cells=outlet_cells, column_cells=column_cells,
+                x_edges_m=[i * dx for i in range(len(column_cells) + 1)], cell_height_m=dz,
+                surface_elevation_m=[datum_shift + count * dz for count in column_cells],
+                routing_slope=surface_slope,
                 minimum_native_outlet_increment_m3=min(
                     (b[1] - a[1] for series in outlet_series for a, b in zip(series, series[1:])), default=0.),
                 minimum_native_outlet_ledger_m3=min(
@@ -247,15 +264,94 @@ def runoff_benchmark(folder):
                 final_soil_storage_gain_m3=soil_gain, routed=routed, closed_surface_control=control)
 
 
+def sample_at_probe(run, x_m, elevation_m):
+    """Interpolate between cell centres within the terrace containing the probe."""
+    edges = run['x_edges_m']
+    heights = run['surface_elevation_m']
+    dz = run['cell_height_m']
+    index = next(i for i, right in enumerate(edges[1:]) if x_m < right)
+    columns = [i for i, height in enumerate(heights) if height == heights[index]]
+    centers = [(edges[i] + edges[i + 1])/2 for i in columns]
+    samples = []
+    for rows in zip(*(run['histories'][i] for i in columns)):
+        values = []
+        for i, row in zip(columns, rows):
+            pressure_by_z = [(heights[i] - (j + .5)*dz, pressure)
+                             for j, pressure in enumerate(row['pressure_head_m'])]
+            values.append(interpolate(list(reversed(pressure_by_z)), elevation_m))
+        samples.append({'time_h': rows[0]['time_h'],
+                        'pressure_head_m': interpolate(list(zip(centers, values)), x_m)})
+    return samples
+
+
+def slope_benchmark(folder):
+    study = json.loads((ROOT / 'models/wetting_front_benchmark.json').read_text())
+    base = dict(study['column'], output_interval_h=.0125, surface_boundary='closed_ponding',
+                duration_h=.125, rain_duration_h=.0625, specific_storage_per_m=.03,
+                initial_theta=.399999)
+    runs = {}
+    for refinement, step_s in ((1, 15), (2, 15), (2, 7.5)):
+        cells = [n * refinement for n in (8, 7, 6, 5) for _ in range(refinement)]
+        spec = dict(base, cells=max(cells), solver_step_h=step_s/3600)
+        name = f'{len(cells)}-columns-{step_s:g}s'
+        run = grid_trial(folder / name, spec, [70] * (2*refinement) + [0] * (2*refinement),
+                         width_m=.4, column_cells=cells, surface_slope=.375,
+                         exposed_step_outlets=True, right_outlet_rows=range(cells[-1]),
+                         route_runoff=True)
+        run['probes'] = {
+            'lower_face': sample_at_probe(run, .25, .13125),
+            'toe': sample_at_probe(run, .35, .09375),
+        }
+        runs[name] = dict(spec=spec, **run)
+
+    def compare(first, second):
+        return {
+            'max_probe_head_difference_m': {
+                point: max(abs(a['pressure_head_m'] - b['pressure_head_m'])
+                           for a, b in zip(history, second['probes'][point]))
+                for point, history in first['probes'].items()
+            },
+            **{f'final_{q}_difference_m3': abs(first['outlet_history'][-1][f'cumulative_{q}_m3']
+                                               - second['outlet_history'][-1][f'cumulative_{q}_m3'])
+               for q in ('discharge', 'runoff')},
+        }
+
+    coarse, fine, half_step = runs.values()
+    grid_difference, step_difference = compare(coarse, fine), compare(fine, half_step)
+    final = half_step['outlet_history'][-1]
+    applied = .2 * cumulative_depth_m(dict(base, rainfall_mm_h=70), base['duration_h'])
+    initial = math.fsum(column[0]['water_storage_m3'] for column in half_step['histories'])
+    total_end = math.fsum(column[-1]['water_storage_m3'] for column in half_step['histories'])
+    surface_end = math.fsum(column[-1]['surface_storage_m3'] for column in half_step['histories'])
+    partition = dict(rainfall_m3=applied, runoff_m3=final['cumulative_runoff_m3'],
+                     seepage_m3=final['cumulative_discharge_m3'], surface_storage_m3=surface_end,
+                     soil_storage_change_m3=total_end - initial - surface_end)
+    criteria = dict(
+        water_balance=all(run['water_balance_max_residual_m3'] <= 1e-7 for run in runs.values()),
+        both_outlets_active=min(final['cumulative_discharge_m3'], final['cumulative_runoff_m3']) > 1e-6,
+        one_way_seepage=all(run['minimum_native_outlet_increment_m3'] >= -1e-9 for run in runs.values()),
+        temporal_pressure=max(step_difference['max_probe_head_difference_m'].values()) <= .02,
+    )
+    config = json.loads((ROOT/'config/engine.json').read_text())
+    return dict(state='completed', passed=all(criteria.values()), criteria=criteria,
+                engine=config, engine_binary_sha256=hashlib.sha256(BINARY.read_bytes()).hexdigest(),
+                scope='Synthetic stepped slope with native OHQ soil, seepage and surface routing.',
+                grid_difference=grid_difference, maximum_step_difference=step_difference,
+                finest_partition=partition, runs=runs)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, default=Path('results/native-seepage-2d.json'))
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument('--outlet', action='store_true', help='Run native atmospheric outlet checks.')
     mode.add_argument('--runoff', action='store_true', help='Run native overland routing and infiltration checks.')
+    mode.add_argument('--slope', action='store_true', help='Run the coupled synthetic stepped slope.')
     args = parser.parse_args()
-    run = runoff_benchmark if args.runoff else outlet_benchmark if args.outlet else benchmark
-    result = run(args.output.parent / (args.output.stem + '_files'))
+    run = {'outlet': outlet_benchmark, 'runoff': runoff_benchmark, 'slope': slope_benchmark}
+    selected = next((fn for name, fn in run.items() if getattr(args, name)), benchmark)
+
+    result = selected(args.output.parent / (args.output.stem + '_files'))
     args.output.write_text(json.dumps(result, indent=2) + '\n')
     print(f"Saved {args.output}: {'passed' if result['passed'] else 'failed'}")
     return 0 if result['passed'] else 1
