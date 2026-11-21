@@ -93,20 +93,23 @@ def independent_trial(spec, points):
     return {'hydrology': hydro, 'extracted': extracted}
 
 
-def independent_refinement(benchmark, pairs):
-    """Compare selected grid and step pairs over the same saved time grid."""
-    points = benchmark['points']
-    keys = dict.fromkeys(key for _, first, second in pairs for key in (first, second))
-    trials = {}
-    for cells, seconds in keys:
-        spec = dict(benchmark['column'], cells=cells, solver_step_h=seconds / 3600)
-        run = independent_trial(spec, points)
-        hydro = run['hydrology']
-        trials[cells, seconds] = dict(
-            cells=cells, maximum_step_s=seconds, steps=hydro['steps'],
-            water_balance_max_residual_m3=hydro['water_balance_max_residual_m3'],
-            extracted=run['extracted'])
+def independent_result(benchmark, cells, seconds):
+    spec = dict(benchmark['column'], cells=cells, solver_step_h=seconds / 3600)
+    run = independent_trial(spec, benchmark['points'])
+    hydro = run['hydrology']
+    return dict(cells=cells, maximum_step_s=seconds, steps=hydro['steps'],
+                water_balance_max_residual_m3=hydro['water_balance_max_residual_m3'],
+                extracted=run['extracted'])
 
+
+def independent_refinement(benchmark, pairs, *, prior_trials=()):
+    """Compare selected grid and step pairs over the same saved time grid."""
+    keys = dict.fromkeys(key for _, first, second in pairs for key in (first, second))
+    trials = {(row['cells'], row['maximum_step_s']): row for row in prior_trials}
+    for key in keys:
+        if key not in trials:
+            trials[key] = independent_result(benchmark, *key)
+    trials = {key: trials[key] for key in keys}
     comparisons = []
     for axis, first, second in pairs:
         a, b = (trials[key]['extracted'] for key in (first, second))
@@ -130,9 +133,9 @@ def fine_grid_refinement(benchmark):
     return independent_refinement(benchmark, pairs)
 
 
-def fine_time_refinement(benchmark):
-    pairs = [('time_step', (256, step), (256, step / 2)) for step in (3.75, 1.875)]
-    return independent_refinement(benchmark, pairs)
+def fine_time_refinement(benchmark, *, prior_trials=()):
+    pairs = [('time_step', (256, step), (256, step / 2)) for step in (3.75, 1.875, .9375)]
+    return independent_refinement(benchmark, pairs, prior_trials=prior_trials)
 
 
 def compare_independent(study):
@@ -167,7 +170,7 @@ def main():
     parser.add_argument('--fine-grid', action='store_true',
                         help='Run independent 64/128/256-cell refinement at 7.5 and 3.75 seconds.')
     parser.add_argument('--fine-time', action='store_true',
-                        help='Run 256 independent cells at 3.75, 1.875 and 0.9375 seconds.')
+                        help='Run 256 independent cells through successive halvings from 3.75 to 0.46875 seconds.')
     args = parser.parse_args()
     if args.output.resolve() in (args.study.resolve(), BENCHMARK.resolve()):
         parser.error('Output must differ from the study and benchmark inputs.')
