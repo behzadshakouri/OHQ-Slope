@@ -79,3 +79,58 @@ def extract(path,analysis,points):
             if any(not all(math.isfinite(v) for v in row.values()) for row in entry['series']):raise ValueError('Nonfinite archived values.')
             result[point['id']]=entry
     return result
+
+
+def inventory(path):
+    """List saved members and analysis folders without rewriting the archive."""
+    with zipfile.ZipFile(path) as archive:
+        analyses = {}
+        project_members = []
+        seen = set()
+        for item in archive.infolist():
+            if item.is_dir():
+                continue
+            name = item.filename
+            if name in seen:
+                raise ValueError(f'Duplicate archive member: {name}')
+            seen.add(name)
+            entry = {'member': name, 'bytes': item.file_size, 'crc32': f'{item.CRC:08x}'}
+            analysis, separator, tail = name.partition('/')
+            if not separator:
+                project_members.append(entry)
+                continue
+            group = analyses.setdefault(analysis, {'members': [], 'saved_steps': []})
+            group['members'].append(entry)
+            step, slash, filename = tail.partition('/')
+            if slash and step.isdecimal() and filename == 'node.csv':
+                group['saved_steps'].append(int(step))
+        for group in analyses.values():
+            group['saved_steps'].sort()
+        return {'archive': path.name, 'file_count': len(seen),
+                'project_members': project_members, 'analysis_folders': analyses}
+
+
+def main():
+    import argparse
+    import json
+    from pathlib import Path
+
+    parser = argparse.ArgumentParser(description='Inventory all saved GeoStudio archive members.')
+    parser.add_argument('archive', type=Path)
+    parser.add_argument('--output', type=Path)
+    args = parser.parse_args()
+    if args.output and args.output.resolve() == args.archive.resolve():
+        parser.error('Output must differ from the source archive.')
+    try:
+        output = json.dumps(inventory(args.archive), indent=2) + '\n'
+        if args.output:
+            args.output.parent.mkdir(parents=True, exist_ok=True)
+            args.output.write_text(output)
+        else:
+            print(output, end='')
+    except (OSError, ValueError, zipfile.BadZipFile) as error:
+        parser.error(str(error))
+
+
+if __name__ == '__main__':
+    main()

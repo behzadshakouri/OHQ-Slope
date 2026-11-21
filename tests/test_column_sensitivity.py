@@ -9,7 +9,8 @@ import unittest
 from hydrology.column import DEFAULT, validate_column
 from validation.column_sensitivity import sample_profile, metrics, validate_study_column
 from validation.column_comparison import compare
-from validation.geostudio_archive import mesh_nodes,graph_location,extract
+from validation.geostudio_archive import mesh_nodes,graph_location,extract,inventory
+from validation.wetting_front import compare_points
 
 
 class ColumnSensitivityTests(unittest.TestCase):
@@ -36,6 +37,28 @@ class ColumnSensitivityTests(unittest.TestCase):
         ref['points']['p']['series'][1] = {'time_h':.9,'pressure_head_m':-2}
         with self.assertRaises(ValueError):
             compare(study, ref)
+
+    def test_wetting_front_reports_missing_crossing_and_interpolated_arrival(self):
+        def series(final_theta):
+            return [{'time_h':0, 'theta':.2, 'pressure_head_m':-.5},
+                    {'time_h':.1, 'theta':final_theta, 'pressure_head_m':-.4}]
+        result = compare_points(series(.24), series(.23))
+        self.assertAlmostEqual(result['arrival_min'], 1)
+        self.assertIsNone(compare_points(series(.24), series(.21))['arrival_min'])
+
+    def test_archive_inventory_retains_nonstandard_saved_members(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder)/'test.gsz'
+            with zipfile.ZipFile(path,'w') as archive:
+                archive.writestr('project.xml','<project/>')
+                archive.writestr('Seepage/002/node.csv','node,head')
+                archive.writestr('Seepage/001/node.csv','node,head')
+                archive.writestr('Deformation/001/custom.dat',b'raw')
+            result = inventory(path)
+        self.assertEqual(result['file_count'], 4)
+        self.assertEqual(result['project_members'][0]['member'], 'project.xml')
+        self.assertEqual(result['analysis_folders']['Seepage']['saved_steps'], [1, 2])
+        self.assertEqual(result['analysis_folders']['Deformation']['members'][0]['bytes'], 3)
 
     def test_sample_moisture_separately_from_pressure(self):
         hydro={'reference_depths_m':[.1,.3], 'profiles':[{'time_h':0,'pressure_head_m':[1,5],'theta':[.2,.4]}]}

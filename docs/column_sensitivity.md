@@ -93,3 +93,41 @@ For a zero-storage rainfall/excess-water control, see
 same external study schema with `column.surface_boundary` set to
 `reviewed_infiltration`, requires cell-centred heads and remains hydrology-only.
 All boundary component hashes are now recorded alongside source identities.
+
+## Synthetic wetting-front benchmark
+
+Run the reviewed-infiltration case at three grids and two maximum time steps.
+This case uses synthetic material inputs and does not require a GSZ archive.
+
+```sh
+python3 -m validation.column_sensitivity models/wetting_front_benchmark.json --cells 16 32 64 --step-divisions 240 480 --engine-seconds 120 --output results/wetting-front-benchmark.json
+python3 -m validation.wetting_front results/wetting-front-benchmark.json
+```
+
+For both depths, the proposed numerical targets are 0.03 m pressure-head
+difference, 0.01 m³/m³ volumetric-water-content difference and two minutes
+in arrival time for 32→64 cells at 7.5 s. For 15→7.5 s at 64 cells they are
+0.005 m, 0.002 m³/m³ and one minute, respectively. Arrival means the first
+upward crossing of initial water content plus 0.02 m³/m³, interpolated from
+one-minute outputs. The assessment also requires maximum absolute water-balance
+residual at or below 1e-7 m³ in every trial. These targets apply to this synthetic
+benchmark as numerical screening criteria. The 16→32 pair is descriptive.
+
+The initial native run exceeded the pressure targets (maximum differences
+0.166 m spatial and 0.0262 m temporal), while moisture and arrival-time
+differences met both sets of targets. Use the normal assessment command to
+report such a valid result, or add `--require-pass` to return a failing exit
+status when an acceptance target is missed.
+
+## Full archive inventory
+
+```sh
+python3 -m validation.geostudio_archive /absolute/path/project.gsz --output results/geostudio-inventory.json
+```
+
+The inventory lists all file members by saved analysis folder, including project
+files, snapshots, mesh files, results tables, caches and unrecognized types.
+It records each member's size and ZIP CRC. Steps with a standard
+`NNN/node.csv` table are also listed. Analysis folder names are archive labels
+and do not establish which analyses OHQ can reproduce. The point reader above
+provides numerical interpretation for its supported variables.

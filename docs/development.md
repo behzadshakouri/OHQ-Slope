@@ -19,3 +19,23 @@ The seismic extension will initially use a pseudostatic coefficient and rainfall
 ## Interface and service status
 
 The local front end and job back end are implemented. Both web jobs and the CLI call the same stability/ensemble code. The server uses a single worker and isolated job folders; long-term scheduling, live sensors, forecast cycling, and data assimilation remain deferred. This is a local research app, not an authenticated public service.
+
+## Modeling coverage roadmap
+
+The near-term goal is to reproduce the seepage, stability and deformation
+analyses used in the archived slope case. Each increment needs an analytical
+or independent numerical benchmark before it is used to interpret the case.
+
+| Analysis | Current OHQ-Slope scope | Modeling work |
+|---|---|---|
+| Seepage | One-dimensional saturated/unsaturated columns, repeated rainfall, and offline reviewed-surface diagnostics | Qualify transient pressure and moisture, then implement 2D spatial flow with lateral redistribution, mesh and material zones, and seepage-face boundaries. Establish 3D requirements after 2D checks. |
+| Slope stability | Infinite slope with supplied or column-derived pore pressure | Define suction strength and external water loading, then add finite slope geometry, slice equilibrium and slip-surface search with benchmark cases. |
+| Stress and deformation | Archive inventory and a pressure interface to the existing stability model | Define displacement, stress, material laws and staged construction. Verify a standalone mechanical reference before coupling pore pressure and deformation. |
+| Seismic response | Rainfall-conditioned pore pressure histories | First verify pseudostatic stability. Dynamic response, cyclic strength and shaking-generated pore pressure require their own models and benchmarks. |
+| Heat, air and contaminant transport | Outside the current slope workflow | Scope individual transport equations, material laws, boundary conditions and coupled benchmarks after the slope workflow is established. |
+
+The archive inventory reveals saved analyses and outputs even when a solver
+for those analyses is unavailable. When adding field readers, preserve analysis,
+step, mesh and variable identities so that a comparison uses the correct geometry
+and units. Use the [wetting-front benchmark](column_sensitivity.md#synthetic-wetting-front-benchmark)
+as the starting regression case for seepage development.

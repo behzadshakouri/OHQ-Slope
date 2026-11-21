@@ -1,0 +1,27 @@
+{
+  "formulation_role": "hydrology_only",
+  "column": {
+    "depth_m": 0.3,
+    "cells": 16,
+    "ksat_m_day": 0.5,
+    "alpha_per_m": 1.5,
+    "n": 1.6,
+    "theta_res": 0.05,
+    "theta_sat": 0.4,
+    "initial_theta": 0.2,
+    "specific_storage_per_m": 0.01,
+    "pore_connectivity": 0.5,
+    "rainfall_mm_h": 40,
+    "rain_duration_h": 0.5,
+    "duration_h": 0.75,
+    "output_interval_h": 0.016666666666666666,
+    "solver_step_h": 0.004166666666666667,
+    "base": "sealed",
+    "formulation": "cell_centred",
+    "surface_boundary": "reviewed_infiltration"
+  },
+  "points": [
+    {"id": "shallow", "vertical_depth_m": 0.025},
+    {"id": "deep", "vertical_depth_m": 0.06}
+  ]
+}
