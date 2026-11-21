@@ -5,6 +5,14 @@ proposals. Include the scenario JSON, commit, engine/build identity, and relevan
 error or water-balance diagnostics. Keep credentials, private datasets, generated
 binaries, large outputs, and paper materials outside commits.
 
+For every new model, boundary condition or engine workflow, inspect the pinned
+OHQ templates, examples and tools first. Reuse a stock component when its
+equations, units and boundary behavior match the case. If a capability is
+missing and the OHQ interpreter can express it, add a focused JSON component
+under `components/` and benchmark it through the native console. If it needs
+an algorithm the interpreter cannot express, document the missing primitive
+and extend OHQ upstream. See [OHQ reuse across the project](docs/development.md#ohq-reuse-across-the-project).
+
 New calculations should state their equations, units, pressure/depth conventions,
 valid domain, and verification evidence. When changing flow physics, distinguish
 conservation, agreement with the same discrete equations, spatial/time convergence,

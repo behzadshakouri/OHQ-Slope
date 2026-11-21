@@ -25,6 +25,8 @@ analytical limits, independent flow comparisons, and numerical refinement checks
 are reported separately from experimental validation. Live digital-twin operation
 remains a future stage.
 
+New modeling work follows an [OHQ-first development policy](docs/development.md#ohq-reuse-across-the-project), with custom OHQ JSON for missing component behavior.
+
 ## Current capability
 
 - Configure a uniform infinite slope with either an OHQ rainfall column or a prescribed pressure history.
