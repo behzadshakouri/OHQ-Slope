@@ -19,3 +19,5 @@
 .slope-legend li{display:flex;align-items:center;gap:6px}
 .slope-legend span{width:10px;height:10px;border-radius:2px}
 .slope-legend:empty,.slope-dimensions:empty{display:none}
+.slope-reference,.slope-depth-cap{fill:none;stroke:#718581;stroke-width:1;vector-effect:non-scaling-stroke}
+.slope-depth-cap{stroke:#376888;stroke-width:1.5}

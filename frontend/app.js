@@ -188,11 +188,11 @@ const geometryNumber = new Intl.NumberFormat(undefined, {maximumFractionDigits:4
 const sectionDimensions = [['section-width','width_m'], ['section-height','cell_height_m']];
 const materialColors = ['#c4ddd3','#e7cbac','#bccfe7','#d5c9e3','#e7dbac','#bbdbdf'];
 
-function geometryFrame(width, height) {
+function geometryFrame(width, height, lowerElevation = 0) {
   const scale = Math.min(548/width, 212/height);
   const left = (640-width*scale)/2;
   const bottom = (280+height*scale)/2;
-  return {x:value=>left+scale*value,y:value=>bottom-scale*value};
+  return {x:value=>left+scale*value,y:value=>bottom-scale*(value-lowerElevation)};
 }
 
 function drawSectionPreview(drawing, draft, stacks) {
@@ -242,7 +242,8 @@ function drawStabilityPreview(drawing, angle, depth, columnDepth) {
   const radians = angle*Math.PI/180;
   const run = 5*Math.cos(radians);
   const rise = 5*Math.sin(radians);
-  const {x,y} = geometryFrame(run,rise+Math.max(depth,columnDepth));
+  const lowerElevation = -Math.max(depth,columnDepth);
+  const {x,y} = geometryFrame(run,rise-lowerElevation,lowerElevation);
   const a=[x(0),y(rise)], b=[x(run),y(0)], c=[x(0),y(rise-depth)], d=[x(run),y(-depth)];
   drawing.append(
     element('polygon',{points:[a,b,d,c].join(' '),fill:'#c4ddd3'}),
@@ -250,8 +251,25 @@ function drawStabilityPreview(drawing, angle, depth, columnDepth) {
     element('polyline',{points:[c,d].join(' '),class:'slope-failure'}),
     element('line',{x1:a[0],y1:a[1],x2:c[0],y2:c[1],class:'slope-depth'})
   );
+  const arcRadius = Math.min(46,Math.hypot(b[0]-a[0],b[1]-a[1])/2);
+  if (arcRadius >= 14) {
+    const start = [a[0]+arcRadius,a[1]];
+    const end = [a[0]+arcRadius*Math.cos(radians),a[1]+arcRadius*Math.sin(radians)];
+    drawing.append(
+      element('line',{x1:a[0],y1:a[1],x2:start[0]+8,y2:a[1],class:'slope-reference'}),
+      element('path',{d:'M '+start.join(' ')+' A '+arcRadius+' '+arcRadius+' 0 0 1 '+end.join(' '),
+        class:'slope-reference'})
+    );
+  }
+  for (const point of [a,c]) {
+    drawing.append(element('line',{x1:point[0]-5,x2:point[0]+5,y1:point[1],y2:point[1],class:'slope-depth'}));
+  }
   if (columnDepth > 0) {
-    drawing.append(element('line',{x1:b[0],y1:b[1],x2:b[0],y2:y(-columnDepth),class:'slope-column'}));
+    const base = y(-columnDepth);
+    drawing.append(
+      element('line',{x1:b[0],y1:b[1],x2:b[0],y2:base,class:'slope-column'}),
+      element('line',{x1:b[0]-5,x2:b[0]+5,y1:base,y2:base,class:'slope-depth-cap'})
+    );
   }
   const fmt = n=>geometryNumber.format(n);
   return {dimensions:[fmt(angle)+'° slope',fmt(depth)+' m vertical failure depth',
