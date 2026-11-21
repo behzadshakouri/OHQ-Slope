@@ -7,7 +7,7 @@ const definitions = [
   ['slope_deg', 'Slope angle', 'degrees', 30, 28, 32, .1, 89],
   ['failure_depth_m', 'Vertical failure depth', 'm', 2, 1.8, 2.2, .01, 100],
 ];
-let currentJob = null, timer = null, exported = null, viewVersion = 0, engineAvailable = false;
+let currentJob = null, timer = null, exported = null, viewVersion = 0, engineAvailable = false, stabilityEngineSelected = false;
 const advanced = [
  ['depth_m','Column depth (m)',2,.1,10], ['cells','Soil cells',16,2,32],
  ['alpha_per_m','Retention α (1/m)',1.5,.01,20], ['n','Retention n',1.6,1.05,5],
@@ -114,8 +114,12 @@ function modeChanged() {
   $('range-help').textContent = ensemble ? 'Each mechanical range is sampled independently and uniformly. These example ranges are illustrative.' : 'The deterministic run uses the value column.';
   hydraulicChanged();
 }
+function defaultStabilityEngine() {
+  return engineAvailable ? 'ohq_json' : 'python_reference';
+}
 function reset() {
-  inputs();advancedInputs();hydraulicInputs();$('sample-hydraulics').checked=false; $('mode').value = 'deterministic';$('pressure-source').value='ohq_column';$('stability-engine').value='python_reference';
+  stabilityEngineSelected = false;
+  inputs();advancedInputs();hydraulicInputs();$('sample-hydraulics').checked=false; $('mode').value = 'deterministic';$('pressure-source').value='ohq_column';$('stability-engine').value=defaultStabilityEngine();
   for(const field of ['value','min','max']) $('failure_depth_m-'+field).value='1';
   for(const [id,value] of Object.entries({rainfall:'40','rain-duration':'6',duration:'24',ksat:'0.5','initial-theta':'0.3',base:'sealed','column-formulation':'legacy_top'})) $(id).value=value;
   $('rain-mode').value='single';$('rain-schedule').value='0.5, 1, 40\n1.5, 2.5, 20';
@@ -273,8 +277,14 @@ $('cancel').onclick=async()=>{try{await api(`/api/jobs/${currentJob}`,{method:'D
 $('sample-hydraulics').onchange=hydraulicChanged;
 $('column-formulation').onchange=formulationChanged;
 $('rain-mode').onchange=rainfallChanged;
-$('stability-engine').onchange=driverChanged;
+$('stability-engine').onchange=()=>{stabilityEngineSelected=true;driverChanged();};
 $('mode').onchange=modeChanged;$('reset').onclick=reset;
 $('pressure-source').onchange=()=>{if($('pressure-source').value==='ohq_column') {for(const field of ['value','min','max']) $('failure_depth_m-'+field).value=$('failure_depth_m-value').value;}driverChanged();};
 $('download').onclick=()=>{if(!exported)return;const url=URL.createObjectURL(new Blob([JSON.stringify(exported,null,2)],{type:'application/json'}));const link=document.createElement('a');link.href=url;link.download=`slope-${exported.job.id}.json`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);};
-reset();api('/api/health').then(health=>{engineAvailable=health.ohq_hydrology_available;driverChanged();}).catch(error=>{$('engine-status').textContent=error.message;});history().catch(error=>{$('status').textContent=`Server unavailable: ${error.message}`;});
+reset();
+api('/api/health').then(health=>{
+  engineAvailable=health.ohq_hydrology_available;
+  if(!stabilityEngineSelected) $('stability-engine').value=defaultStabilityEngine();
+  driverChanged();
+}).catch(error=>{$('engine-status').textContent=error.message;});
+history().catch(error=>{$('status').textContent=`Server unavailable: ${error.message}`;});

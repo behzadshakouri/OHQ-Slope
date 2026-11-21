@@ -10,7 +10,7 @@ The pinned general expression interpreter does not implement sine, cosine, or ta
 
 ## App and uncertainty integration
 
-Choose **OHQ JSON component** under **Stability calculation**, or add `"stability_engine": "ohq_json"` to a CLI/API scenario. The default remains `python_reference`, which also works without an OHQ build for prescribed pressures.
+Choose **OHQ JSON component** under **Stability calculation**, or add `"stability_engine": "ohq_json"` to a CLI/API scenario. The browser selects OHQ JSON when the console is available and Python reference otherwise. API/CLI scenarios that omit `stability_engine` retain the original `python_reference` default for reproducibility. The Python reference also supports prescribed pressures without an OHQ build.
 
 The external orchestrator samples the same seeded parameters as before. For each realization it sends the selected pressure-history states to a generated diagnostic model, runs OHQ, and uses the resulting JSON-component FS values in the summaries. This supports deterministic, mechanical-only, and paired hydraulic/mechanical runs. Each realization is independently checked against the Python reference before aggregation. Limits are 100 realizations and 10,000 sample-time evaluations per JSON-engine job; each history has at most 500 rows.
 

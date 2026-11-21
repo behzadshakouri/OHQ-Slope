@@ -47,6 +47,22 @@ boundary, process, diagnostic or calibration tool.
 | Water quality and thermal processes | Start with native mass-transfer templates, reaction cases and the upstream Thermal Discharge Pond example. | Verify the specific porous-media transport and boundary equations before extending to heat, air or contaminants in a slope. |
 | Calibration and uncertainty | Evaluate the pinned OHQ-LM, OHQ-GA and OHQ-MCMC tools when their objective and inference assumptions fit the task. | Verify tool builds, parameter binding and reproducibility. The current forward Monte Carlo orchestrator is a separate workflow and requires equivalent sampling and output checks before replacement. |
 
+### Retrospective audit
+
+- `d652add` pinned OHQ at project initialization. `7a593f2` introduced the native
+  rainfall-column workflow, and subsequent column physics continued to run in
+  OHQ. Python reference integrators were added to verify those runs.
+- `8bd9ddf` introduced Python factor-of-safety analysis and forward sampling.
+  `4b3a9d1` added the verified OHQ JSON stability diagnostic. The browser now
+  prefers that diagnostic when OHQ is available. Explicit older scenarios and
+  API/CLI requests with no engine selection retain their original semantics.
+- The Python-only rectangular 2D solver at `eb82fbc` is an analytical
+  verification reference. The native two-column grid reuses OHQ soil and
+  horizontal links and the existing cell-centred vertical and surface templates.
+- Hydraulic table fitting and forward sampling remain external. Calibration
+  migration is conditional on verifying the relevant OHQ tool against the
+  actual objective, parameters and output requirements.
+
 ## Interface and service status
 
 The local front end and job back end are implemented. Both web jobs and the CLI call the same stability/ensemble code. The server uses a single worker and isolated job folders; long-term scheduling, live sensors, forecast cycling, and data assimilation remain deferred. This is a local research app, not an authenticated public service.

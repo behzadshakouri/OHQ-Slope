@@ -87,15 +87,41 @@ def ready():
     return BINARY.is_file() and os.access(BINARY, os.X_OK) and (BINARY.parent/'build.json').is_file()
 
 
+def write_native_rainfall(folder, spec, filename):
+    # Native records are interval TOTAL depths in metres, not intensities.
+    rain=[f'{start/24:.17g},{end/24:.17g},{rate*(end-start)/1000:.17g}'
+          for start,end,rate in intervals(spec)]
+    (folder / filename).write_text('\n'.join(rain)+'\n')
+
+
+def native_soil_block(spec, name, area_m2, depth_m, bottom_m):
+    fields = {'name': name, 'area': area_m2, 'depth': depth_m, 'bottom_elevation': bottom_m,
+              'theta': spec['initial_theta'], 'theta_res': spec['theta_res'], 'theta_sat': spec['theta_sat'],
+              'alpha': spec['alpha_per_m'], 'n': spec['n'], 'L': spec['pore_connectivity'],
+              'K_sat_original': spec['ksat_m_day'], 'K_sat_scale_factor': 1,
+              'specific_storage': spec['specific_storage_per_m'], 'aniso_ratio': 1}
+    return 'create block;type=Soil,' + ','.join(f'{k}={v}' for k,v in fields.items())
+
+
+def native_settings(spec, *, centred, reviewed=False):
+    duration = spec['duration_h']/24
+    settings = {'simulation_start_time':0, 'simulation_end_time':duration,
+                'initial_time_step': spec['solver_step_h']/24, 'max_timestep_increase_factor':1,
+                'minimum_timestep':1e-10, 'nr_tolerance':1e-12 if reviewed else (1e-10 if centred else 1e-8),
+                'maximum_time_allowed':120, 'make_timeseries_uniform':'No',
+                'record_results':'No', 'alloutputfile':'', 'observed_outputfile':'observations.csv',
+                'write_solution_details':'No', 'n_threads':1}
+    if reviewed:
+        settings.update(nr_block_tolerance=1e-10,update_jacobian_every_iteration='Yes')
+    return [f'setvalue;object=system,quantity={name},value={value}'
+            for name,value in settings.items()]
+
+
 def render(folder, spec):
     """One square metre column; optional reviewed surface excess, no ET/lateral soil flow."""
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
-    duration = spec['duration_h']/24
-    # Native records are interval TOTAL depths in metres, not intensities.
-    rain=[f'{start/24:.17g},{end/24:.17g},{rate*(end-start)/1000:.17g}'
-          for start,end,rate in intervals(spec)]
-    (folder/'rainfall.csv').write_text('\n'.join(rain)+'\n')
+    write_native_rainfall(folder,spec,'rainfall.csv')
     lines = [f'loadtemplate; filename={ENGINE}/resources/main_components.json',
              f'addtemplate; filename={ENGINE}/resources/unsaturated_soil.json',
              f'addtemplate; filename={ROOT}/components/column_boundaries.json',
@@ -107,12 +133,7 @@ def render(folder, spec):
     if reviewed:lines.insert(3,f'addtemplate; filename={ROOT}/components/reviewed_surface.json')
     dz = spec['depth_m']/spec['cells']
     for i in range(spec['cells']):
-        fields = {'name': f'Soil{i}', 'area': 1, 'depth': dz, 'bottom_elevation': -(i+1)*dz,
-                  'theta': spec['initial_theta'], 'theta_res': spec['theta_res'], 'theta_sat': spec['theta_sat'],
-                  'alpha': spec['alpha_per_m'], 'n': spec['n'], 'L': spec['pore_connectivity'],
-                  'K_sat_original': spec['ksat_m_day'], 'K_sat_scale_factor': 1,
-                  'specific_storage': spec['specific_storage_per_m'], 'aniso_ratio': 1}
-        lines.append('create block;type=Soil,' + ','.join(f'{k}={v}' for k,v in fields.items()))
+        lines.append(native_soil_block(spec,f'Soil{i}',1,dz,-(i+1)*dz))
     surface_type='Column Centre Surface Link' if centred else 'surfacewater_to_soil_link'
     soil_type='Column Centre Soil Link' if centred else 'soil_to_soil_link'
     if reviewed:surface_type='Column Reviewed Rain Link'
@@ -131,16 +152,7 @@ def render(folder, spec):
         observations += [(f'storage_{i}',f'Soil{i}','Storage'), (f'pressure_{i}',f'Soil{i}','pressure_head'), (f'theta_{i}',f'Soil{i}','theta')]
     for name, obj, quantity in observations:
         lines.append(f'create observation;type=Observation,name={name},object={obj},expression={quantity},observed_data=,error_structure=normal,error_standard_deviation=1')
-    settings = {'simulation_start_time':0, 'simulation_end_time':duration,
-                'initial_time_step': spec['solver_step_h']/24, 'max_timestep_increase_factor':1,
-                'minimum_timestep':1e-10, 'nr_tolerance':1e-12 if reviewed else (1e-10 if centred else 1e-8),
-                'maximum_time_allowed':120, 'make_timeseries_uniform':'No',
-                'record_results':'No', 'alloutputfile':'', 'observed_outputfile':'observations.csv',
-                'write_solution_details':'No', 'n_threads':1}
-    if reviewed:
-        settings.update(nr_block_tolerance=1e-10,update_jacobian_every_iteration='Yes')
-    for name,value in settings.items():
-        lines.append(f'setvalue;object=system,quantity={name},value={value}')
+    lines.extend(native_settings(spec,centred=centred,reviewed=reviewed))
     path = folder/'column.ohq'
     path.write_text('\n'.join(lines)+'\n')
     return path

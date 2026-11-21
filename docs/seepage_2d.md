@@ -76,3 +76,18 @@ A native slope mesh must still match connector elevations, conductivities,
 interface dimensions and outlet boundary placement. The closed horizontal
 benchmark checks one connector direction. It does not verify those choices
 for the full 2D rainfall and seepage-face case.
+
+The first native 2D grid uses two columns with eight soil cells each. It
+runs through the OHQ console with stock horizontal links and the existing
+cell-centred OHQ JSON vertical and surface links:
+
+```sh
+python3 -m validation.native_seepage_2d --output results/native-seepage-2d.json
+```
+
+Uniform rain reproduces the native stand-alone column to within 0.018 mm
+of pressure head. With rain on the left only, the unwatered column gains
+0.694 L over the run. Removing only the horizontal links gives zero gain.
+The native cases use ponding and sealed sides and bases. They establish
+redistribution in a small rectangular grid. Sloping geometry and an
+atmospheric seepage outlet still need a native coupled benchmark.
